@@ -1,3 +1,8 @@
+# modules/utils.py
+# Utility functions for plotting learning curves and DORAEMON dynamics.
+
+import os
+import glob
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -5,24 +10,57 @@ from stable_baselines3.common.evaluation import evaluate_policy
 
 def plot_learning_curve(log_dir, title="Learning Curve"):
     """
-    Reads the monitor.csv file produced by SB3 and plots smoothed rewards.
+    Reads all monitor files in log_dir and plots smoothed rewards.
+    Robust to corrupted lines and different naming conventions.
     """
-    try:
-        # SB3 Monitor logs are CSVs with 2 lines of metadata header
-        df = pd.read_csv(f"{log_dir}/monitor.csv", skiprows=1)
-    except FileNotFoundError:
-        print(f"No log file found at {log_dir}/monitor.csv")
+    # 1. Find files (support both naming conventions)
+    files = glob.glob(f"{log_dir}/*.monitor.csv")
+    if not files:
+        files = glob.glob(f"{log_dir}/monitor.csv")
+        
+    if not files:
+        print(f"No monitor files found in {log_dir}")
         return
 
-    # Calculate rolling average for smoothness
-    window_size = 50
-    df['r_smooth'] = df['r'].rolling(window=window_size).mean()
+    print(f"Found {len(files)} log files: {[os.path.basename(f) for f in files]}")
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(df['l'].cumsum(), df['r'], alpha=0.3, color='gray', label='Raw Reward')
-    plt.plot(df['l'].cumsum(), df['r_smooth'], color='blue', linewidth=2, label=f'Smoothed ({window_size})')
+    data_frames = []
+    for file in files:
+        try:
+            # skiprows=1 handles the JSON header
+            # on_bad_lines='skip' ignores corrupted lines (e.g. from crashes)
+            df = pd.read_csv(file, skiprows=1, on_bad_lines='skip')
+            data_frames.append(df)
+        except Exception as e:
+            print(f"Could not read {file}: {e}")
+            continue
+            
+    if not data_frames:
+        print("No valid data found to plot.")
+        return
+
+    # 2. Combine and Sort
+    df_concat = pd.concat(data_frames)
+    df_concat = df_concat.sort_values(by='t') # Sort by walltime
     
-    plt.xlabel("Timesteps")
+    # 3. Smoothing
+    window_size = 50
+    if len(df_concat) >= window_size:
+        df_concat['r_smooth'] = df_concat['r'].rolling(window=window_size).mean()
+        
+    # 4. Plot
+    plt.figure(figsize=(10, 5))
+    
+    # Use 'l' (episode length) cumsum to estimate total timesteps
+    # This aligns the x-axis for multiple environments
+    x_axis = df_concat['l'].cumsum()
+    
+    plt.plot(x_axis, df_concat['r'], alpha=0.3, color='gray', label='Raw Reward')
+    
+    if 'r_smooth' in df_concat:
+        plt.plot(x_axis, df_concat['r_smooth'], color='blue', linewidth=2, label=f'Smoothed ({window_size})')
+    
+    plt.xlabel("Total Timesteps")
     plt.ylabel("Reward")
     plt.title(title)
     plt.legend()
@@ -31,60 +69,36 @@ def plot_learning_curve(log_dir, title="Learning Curve"):
 
 def plot_doraemon_dynamics(doraemon_callback):
     """
-    Plots the history of Entropy expansion (Mass Range Width) vs Performance.
+    Plots the internal dynamics of Real DORAEMON:
+    1. Entropy (How much randomization?)
+    2. Lambda (How strict is the constraint?)
+    3. Success Rate (Are we meeting the target?)
     """
-    if not doraemon_callback or not hasattr(doraemon_callback, 'history'):
-        print("No Doraemon history found.")
-        return
-
-    # History is a list of tuples: (timesteps, width, reward)
-    data = np.array(doraemon_callback.history)
+    history = doraemon_callback.history
     
-    if len(data) == 0:
-        print("Doraemon history is empty.")
-        return
+    # Create a figure with 3 subplots
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
 
-    timesteps = data[:, 0]
-    widths = data[:, 1]
-    rewards = data[:, 2]
-
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-
-    # Plot 1: Entropy (Width)
-    color = 'tab:red'
-    ax1.set_xlabel('Timesteps')
-    ax1.set_ylabel('Mass Range Width (Entropy)', color=color)
-    ax1.plot(timesteps, widths, color=color, linewidth=2, label='Entropy (Width)')
-    ax1.tick_params(axis='y', labelcolor=color)
-    ax1.set_ylim(0, 1.1)
+    # Plot 1: Entropy (The Objective)
+    ax1.plot(history['entropy'], color='green', linewidth=2)
+    ax1.set_ylabel('Entropy (Sum Log Std)')
+    ax1.set_title('Objective: Maximize Entropy')
     ax1.grid(True, alpha=0.3)
 
-    # Plot 2: Performance (Reward)
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    color = 'tab:blue'
-    ax2.set_ylabel('Eval Reward', color=color)
-    ax2.plot(timesteps, rewards, color=color, linestyle='--', alpha=0.6, label='Eval Reward')
-    ax2.tick_params(axis='y', labelcolor=color)
+    # Plot 2: Lambda (The Lagrangian Multiplier)
+    ax2.plot(history['lambda'], color='red', linewidth=2)
+    ax2.set_ylabel('Lambda (Penalty)')
+    ax2.set_title('Lagrangian Multiplier (Safety Temperature)')
+    ax2.grid(True, alpha=0.3)
 
-    plt.title("DORAEMON: Entropy Expansion vs Performance")
-    fig.tight_layout()
+    # Plot 3: Success Rate (The Constraint)
+    ax3.plot(history['success'], color='blue', linewidth=2, label='Current Success')
+    ax3.axhline(y=0.8, color='black', linestyle='--', label='Target (0.8)')
+    ax3.set_ylabel('Success Rate')
+    ax3.set_xlabel('Updates')
+    ax3.set_title('Constraint: Success >= Target')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+
+    plt.tight_layout()
     plt.show()
-
-def evaluate_sim2real(model, source_env, target_env, n_episodes=20):
-    """
-    Evaluates the model on Source (Sim) and Target (Real/Proxy)
-    """
-    print(f"--- Evaluating over {n_episodes} episodes ---")
-    
-    # 1. Source Performance
-    mean_source, std_source = evaluate_policy(model, source_env, n_eval_episodes=n_episodes)
-    print(f"Source Env Reward: {mean_source:.2f} +/- {std_source:.2f}")
-
-    # 2. Target Performance
-    mean_target, std_target = evaluate_policy(model, target_env, n_eval_episodes=n_episodes)
-    print(f"Target Env Reward: {mean_target:.2f} +/- {std_target:.2f}")
-    
-    gap = mean_source - mean_target
-    print(f"Sim2Real Gap: {gap:.2f}")
-    
-    return mean_source, mean_target

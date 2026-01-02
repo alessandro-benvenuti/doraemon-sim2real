@@ -2,90 +2,103 @@
 # Main training script to setup environment, model, and training loop.
 # Uses UDR and DORAEMON as needed.
 
+import os
+import sys
 import gymnasium as gym
-from stable_baselines3 import PPO, SAC
+from stable_baselines3 import SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv, SubprocVecEnv
-from .env import UDRHopperWrapper
-from .callbacks import DoraemonLiteCallback
+from stable_baselines3.common.monitor import Monitor
 
-def make_wrapped_env(env_id, use_udr, udr_range):
+from env.custom_hopper import *
+
+# Import your NEW wrapper and callback
+from modules.env import GaussianHopperWrapper
+from modules.callbacks import DoraemonCallback
+
+
+def make_wrapped_env(env_id, use_doraemon, log_dir=None):
     """
-    Internal function that creates a single environment and applies the UDR Wrapper.
-    This function is passed to make_vec_env which will execute it N times.
+    Creates the environment.
+    If use_doraemon is True, we wrap it with the Gaussian Wrapper.
     """
     def _init():
+        # Used for SubprocVecEnv to create envs in subprocesses
+        # -----------------------
+        # 1. Add the project root to sys.path inside this worker process
+        # This allows the worker to find 'env.custom_hopper'
+        current_dir = os.path.dirname(os.path.abspath(__file__)) # .../modules/
+        project_root = os.path.dirname(current_dir)              # .../project/
+        if project_root not in sys.path:
+            sys.path.append(project_root)
+        
+        # 2. Register the environment locally in the worker
+        import env.custom_hopper 
+        # -----------------------
+
+
         env = gym.make(env_id)
-        if use_udr:
-        # Wrap with UDR --> This is a lighter version of DORAEMON
-        # In real DORAEMON we would have another distribution instead of the fixed one.
-        # We always need a Wrapper (to change physics) and a Callback (to decide how to change them). 
-        # In Lite, we recycle the UDR wrapper from lab 4 because it's the easiest one to code.
-            env = UDRHopperWrapper(env, mass_range_scale=udr_range)
+        if use_doraemon:
+            # Initialize with standard mass (mean=1.0) and almost zero noise (std=0.01)
+            env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
+
+        if log_dir:
+            env = Monitor(env, filename=os.path.join(log_dir, "monitor.csv"))
+
         return env
     return _init
 
 def train_agent(config, log_dir="./logs/"):
-    # 1. Training Env (Vectorized & Normalized)
-    n_envs = 8 if config['vectorize'] else 1
-    
+    # 1. Setup Environment
+    n_envs = 4 if config['vectorize'] else 1
+
     env = make_vec_env(
-        make_wrapped_env(config['env_id'], config['use_udr'], config['udr_initial_range']),
-        n_envs=n_envs,
-        vec_env_cls=DummyVecEnv
+        make_wrapped_env(config['env_id'], use_doraemon=True, log_dir=log_dir),
+        n_envs=n_envs, 
+        vec_env_cls=SubprocVecEnv if n_envs > 1 else DummyVecEnv,
+        monitor_dir=log_dir
     )
     
+    # 2. Add Normalization (Optional but recommended for Hopper)
     if config['normalize']:
-        # Training = True (Update stats as we learn)
-        env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
+        env = VecNormalize(env, norm_obs=True, norm_reward=False, clip_obs=10., training=True)
 
-    # 2. Evaluation Env (MUST MATCH TRAINING ENV!)
-    # We create a separate env for the callback to test on
-    eval_env = make_vec_env(
-        make_wrapped_env(config['env_id'], config['use_udr'], config['udr_initial_range']),
-        n_envs=1, # Eval is usually on 1 env
-        vec_env_cls=DummyVecEnv
-    )
-    
-    if config['normalize']:
-        # Training = False (Do not update stats during test, just use existing ones)
-        # norm_reward = False (We want to see the REAL reward, not the scaled one)
-        eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10., training=False)
-
-    # Setup Callback Doraemon
+    # 3. Setup the Real DORAEMON Callback
+    # This callback will hold the reference to 'env' and update its Gaussian parameters
     callbacks = []
-    if config['use_doraemon']:
-        eval_env = make_vec_env(
-            make_wrapped_env(config['env_id'], config['use_udr'], config['udr_initial_range']),
-            n_envs=1, # Eval only needs 1 env
-            vec_env_cls=DummyVecEnv
-        )
-        if config['normalize']:
-            # training=False: Don't update stats during test
-            # norm_reward=False: We want to see the REAL unscaled reward
-            eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, clip_obs=10., training=False)
-            
-        doraemon_cb = DoraemonLiteCallback(eval_env, env, target_success=0.8) # We pass 'env' (the vectorized one) to the callback
-        callbacks.append(doraemon_cb)
+    doraemon_cb = DoraemonCallback(
+        training_env=env,       # The vectorized env wrapper
+        target_success=0.8,     # Constraint: Keep success rate >= 80%
+        buffer_size=10,         # Update distribution every 10 episodes
+        lr_param=0.05,          # Learning rate for Mean/Std
+        lr_lambda=0.1          # Learning rate for the Lagrangian multiplier
+    )
+    callbacks.append(doraemon_cb)
 
-    # model setup
-    model_name = f"{config['algo']}_vec_norm_{config['seed']}"
+    # 4. Setup Model (SAC)
+    model_name = f"{config['algo']}_doraemon_{config['seed']}"
     
-    if config['algo'] == 'sac':
-        # SAC handles vectorization natively now
-        model = SAC('MlpPolicy', env, seed=config['seed'], verbose=1, learning_rate=config["lr"])
+    model = SAC(
+        'MlpPolicy', 
+        env, 
+        seed=config['seed'], 
+        verbose=1, 
+        learning_rate=config["lr"]
+    )
     
-    print(f"Starting training on {n_envs} parallel environments with Normalization...")
+    print(f"Starting Real DORAEMON training...")
+    
     try:
         model.learn(total_timesteps=config['timesteps'], callback=callbacks)
         
-        # Also save normalization statistics!
-        # Without this, the loaded model will be dumb because it expects normalized data
+        # Save model and normalization stats
         if config['normalize']:
             env.save(f"{log_dir}/{model_name}_vecnormalize.pkl")
-            
         model.save(f"{log_dir}/{model_name}")
-    except KeyboardInterrupt:
-        model.save(f"{log_dir}/{model_name}_interrupted")
+        print(f"Model saved at {log_dir}/{model_name}")
         
-    return model, callbacks
+    except KeyboardInterrupt:
+        print("Training interrupted. Saving current model...")
+        model.save(f"{log_dir}/{model_name}_interrupted")
+
+    return model, env, doraemon_cb
