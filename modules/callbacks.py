@@ -2,13 +2,13 @@
 # Callback implementing DORAEMON-Lite to adapt mass randomization based on success rate.
 # This handles the "Auto-Tuning" of the environment difficulty.
 
+import os
+import json
+import torch
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import VecNormalize, sync_envs_normalization
-
-import numpy as np
-import torch
 from stable_baselines3.common.callbacks import BaseCallback
 
 class DoraemonCallback(BaseCallback):
@@ -18,21 +18,32 @@ class DoraemonCallback(BaseCallback):
     
     Objective: max J = Entropy + lambda * (SuccessRate - Target)
     """
-    def __init__(self, training_env, target_success=0.8, buffer_size=50, lr_param=1e-3, lr_lambda=1e-2, verbose=1):
+    def __init__(self, training_env, target_success=0.8, buffer_size=50, 
+                lr_param=1e-3, lr_lambda=1e-2, verbose=1,
+                # Checkpointing arguments
+                save_freq=0, save_path=None, initial_lambda=1.0, initial_history=None):
+        
         super().__init__(verbose)
         self.doraemon_env = training_env
         self.target_success = target_success
-        self.buffer_size = buffer_size # How many episodes to collect before an update
-        
-        # Optimization Hyperparameters
+        self.buffer_size = buffer_size
         self.lr_param = lr_param
         self.lr_lambda = lr_lambda
         
-        # Initialize Lagrangian Multiplier (Lambda)
-        # Higher lambda = more focus on Success (Safety), Lower lambda = more focus on Entropy (Exploration)
-        self.labda = 1.0 
+        # Initialize Lambda (Allow restoring from checkpoint)
+        self.labda = initial_lambda 
         
-        # Buffers to store episode data
+        # Checkpointing setup
+        self.save_freq = save_freq
+        self.save_path = save_path
+
+        # RESTORE HISTORY IF RESUMING, ELSE START FRESH
+        if initial_history is not None:
+            self.history = initial_history
+        else:
+            self.history = {'entropy': [], 'success': [], 'lambda': []}
+        
+        # Buffers
         self.episode_params = []
         self.episode_outcomes = []
         self.history = {'entropy': [], 'success': [], 'lambda': []}
@@ -48,7 +59,7 @@ class DoraemonCallback(BaseCallback):
                 # We assume Success if Reward > Threshold (e.g. 600 for Hopper)
                 # You might need to adjust this threshold based on your specific task
                 reward = infos[i].get('episode', {}).get('r', 0)
-                is_success = 1.0 if reward > 600 else 0.0
+                is_success = 1.0 if reward > 1400 else 0.0
                 
                 # 2. Get the Parameters that generated this outcome
                 # We query the specific env instance for the parameters used in the last episode
@@ -132,10 +143,45 @@ class DoraemonCallback(BaseCallback):
         if self.verbose > 0:
             print(f"[DORAEMON] Step {self.num_timesteps}: Success={avg_success:.2f} | Lambda={self.labda:.2f} | Mean={new_mean} | Std={new_std}")
             
-        self.history['entropy'].append(np.sum(np.log(new_std)))
+        self.history['entropy'].append(float(np.sum(np.log(new_std))))
         self.history['success'].append(avg_success)
         self.history['lambda'].append(self.labda)
         
         # Clear buffers
         self.episode_params = []
         self.episode_outcomes = []
+
+    def save_checkpoint(self):
+        """Saves Model, ReplayBuffer, VecNormalize stats, and DORAEMON state."""
+        save_dir = os.path.join(self.save_path, "checkpoints")
+        os.makedirs(save_dir, exist_ok=True)
+        step = self.num_timesteps
+        
+        print(f"Saving checkpoint at step {step}...")
+
+        # 1. Get current physics params
+        mean, std = self.doraemon_env.env_method('get_distribution_params', indices=[0])[0]
+
+        sanitized_history = {
+            key: [float(x) for x in value_list] 
+            for key, value_list in self.history.items()
+        }
+        
+        # 2. Save DORAEMON specific state (JSON)
+        state = {
+            "timesteps": step,
+            "lambda": float(self.labda),
+            "mean": mean.tolist(),
+            "std": std.tolist(),
+            "history": sanitized_history
+        }
+        with open(f"{save_dir}/doraemon_state_{step}.json", "w") as f:
+            json.dump(state, f, indent=4)
+            
+        # 3. Save SB3 Components
+        self.model.save(f"{save_dir}/model_{step}")
+        self.model.save_replay_buffer(f"{save_dir}/replay_buffer_{step}")
+        
+        # 4. Save Normalization Stats (Critical!)
+        if hasattr(self.doraemon_env, 'save'):
+            self.doraemon_env.save(f"{save_dir}/vecnormalize_{step}.pkl")
