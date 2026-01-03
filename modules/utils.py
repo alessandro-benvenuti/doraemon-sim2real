@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 def plot_learning_curve(log_dir, title="Learning Curve"):
     """
@@ -102,3 +103,54 @@ def plot_doraemon_dynamics(doraemon_callback):
 
     plt.tight_layout()
     plt.show()
+
+def evaluate_sim2real(model, source_env_raw, target_env_raw, log_dir, model_name, n_eval_episodes=20):
+    """
+    Evaluates the model on Source vs Target and prints Average Reward AND Average Length.
+    """
+    # 1. Wrap raw envs into Vectorized Envs
+    source_vec = DummyVecEnv([lambda: source_env_raw])
+    target_vec = DummyVecEnv([lambda: target_env_raw])
+
+    # 2. Load Normalization Statistics
+    norm_path = f"{log_dir}/{model_name}_vecnormalize.pkl"
+    try:
+        source_vec = VecNormalize.load(norm_path, source_vec)
+        target_vec = VecNormalize.load(norm_path, target_vec)
+        
+        # Turn off training/updates for eval
+        source_vec.training = False
+        source_vec.norm_reward = False
+        target_vec.training = False
+        target_vec.norm_reward = False
+        
+        print(f"Loaded Normalization stats from {norm_path}")
+    except FileNotFoundError:
+        print("Warning: No normalization stats found. Using RAW obs.")
+
+    # --- Helper to print stats ---
+    def print_stats(name, env):
+        # return_episode_rewards=True makes it return two lists: (rewards, lengths)
+        rewards, lengths = evaluate_policy(
+            model, 
+            env, 
+            n_eval_episodes=n_eval_episodes, 
+            deterministic=True, 
+            return_episode_rewards=True
+        )
+        
+        mean_r, std_r = np.mean(rewards), np.std(rewards)
+        mean_l, std_l = np.mean(lengths), np.std(lengths)
+        
+        print(f"\n--- Evaluating on {name} ---")
+        print(f"Reward: {mean_r:.2f} +/- {std_r:.2f}")
+        print(f"Length: {mean_l:.2f} +/- {std_l:.2f} steps")
+        return mean_r
+
+    # 3. Evaluate on Source
+    mean_reward = print_stats("SOURCE Env (Simulation)", source_vec)
+
+    # 4. Evaluate on Target
+    mean_reward_real = print_stats("TARGET Env (Real/Shifted)", target_vec)
+    
+    return mean_reward, mean_reward_real
