@@ -7,6 +7,7 @@ import sys
 import json
 import gymnasium as gym
 from stable_baselines3 import SAC
+from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
@@ -14,7 +15,7 @@ from stable_baselines3.common.monitor import Monitor
 from env.custom_hopper import *
 
 # Import your NEW wrapper and callback
-from modules.env import GaussianHopperWrapper
+from modules.env import GaussianHopperWrapper, GaussianCartPoleWrapper,UDRHopperWrapper,  UDRCartPoleWrapper
 from modules.callbacks import DoraemonCallback
 
 
@@ -27,10 +28,23 @@ def make_wrapped_env(env_id, use_doraemon):
         if project_root not in sys.path:
             sys.path.append(project_root)
         import env.custom_hopper # Register env in worker
-        
+        import env.custom_carpole # Register env in worker
+
         env = gym.make(env_id)
+        
         if use_doraemon:
-            env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
+            # DORAEMON: Gaussian distribution for adaptation
+            if 'Hopper' in env_id or 'hopper' in env_id:
+                env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
+            elif 'CartPole' in env_id or 'cartpole' in env_id.lower():
+                env = GaussianCartPoleWrapper(env, initial_mean=1.0, initial_std=0.01)
+        else:
+            # UDR: Uniform Domain Randomization
+            if 'Hopper' in env_id or 'hopper' in env_id:
+                env= UDRHopperWrapper(env)  # Hopper UDR can be added later if needed
+            elif 'CartPole' in env_id or 'cartpole' in env_id.lower():
+                env = UDRCartPoleWrapper(env)
+        
         return env
     return _init
 
@@ -44,12 +58,16 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
     device = 'cpu'
         
     n_envs = config.get('n_envs', 1) if config['vectorize'] else 1
-    vec_env_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
+    # On Windows, SubprocVecEnv can have issues. Use DummyVecEnv for CartPole
+    if 'CartPole' in config['env_id']:
+        vec_env_cls = DummyVecEnv  # Force DummyVecEnv for CartPole on Windows
+    else:
+        vec_env_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
     
     # 2. Create Environment
     # Note: We create a fresh env first, then load stats into it if resuming
     env = make_vec_env(
-        make_wrapped_env(config['env_id'], use_doraemon=True),
+        make_wrapped_env(config['env_id'], use_doraemon=config['use_doraemon']),
         n_envs=n_envs,
         vec_env_cls=vec_env_cls,
         monitor_dir=log_dir 
@@ -76,10 +94,14 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
                 print("Warning: No VecNormalize checkpoint found (starting fresh stats).")
         
         # B. Load Model & Replay Buffer
-        model = SAC.load(f"{ckpt_dir}/model_{resume_step}", env=env, device=device)
-        model.load_replay_buffer(f"{ckpt_dir}/replay_buffer_{resume_step}")
-        print("Loaded Model and Replay Buffer.")
+        if config['algorithm'] == 'SAC':
+            model = SAC.load(f"{ckpt_dir}/model_{resume_step}", env=env, device=device)
+            model.load_replay_buffer(f"{ckpt_dir}/replay_buffer_{resume_step}")
+            print("Loaded Model and Replay Buffer.")
         
+        elif config['algorithm'] == 'PPO':
+            model = PPO.load(f"{ckpt_dir}/model_{resume_step}", env=env, device=device)
+            
         # C. Load DORAEMON State
         with open(f"{ckpt_dir}/doraemon_state_{resume_step}.json", "r") as f:
             state = json.load(f)
@@ -96,30 +118,48 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         print("--- STARTING NEW TRAINING ---")
         if config['normalize']:
             env = VecNormalize(env, norm_obs=True, norm_reward=False, clip_obs=10., training=True)
-            
-        model = SAC(
-            'MlpPolicy', 
-            env, 
-            seed=config['seed'], 
-            verbose=1, 
-            learning_rate=config["lr"],
-            device=device,
-            tensorboard_log="./tensorboard_logs/"
-        )
+        
+        if config['algorithm'] == 'SAC':
+            model = SAC(
+                'MlpPolicy', 
+                env, 
+                seed=config['seed'], 
+                verbose=1, 
+                learning_rate=config["lr"],
+                device=device,
+                tensorboard_log="./tensorboard_logs/"
+            )
+        elif config['algorithm'] == 'PPO':
+            model = PPO(
+                'MlpPolicy', 
+                env, 
+                seed=config['seed'], 
+                verbose=1, 
+                learning_rate=config["lr"],
+                device=device,
+                tensorboard_log="./tensorboard_logs/"
+            )
 
-    # 4. Setup Callback (With Checkpointing Enabled)
-    doraemon_cb = DoraemonCallback(
-        training_env=env,
-        target_success=0.7,
-        buffer_size=20, 
-        lr_param=0.01, 
-        lr_lambda=0.5,
-        # Checkpoint settings
-        save_freq=50000,   # Save every 50k steps
-        save_path=log_dir,
-        initial_lambda=initial_lambda,
-        initial_history=initial_history
-    )
+    # 4. Setup Callback (Only if DORAEMON is enabled)
+    doraemon_cb = None
+    callbacks_list = []
+    
+    if config['use_doraemon']:
+        doraemon_cb = DoraemonCallback(
+            training_env=env,
+            target_success= config.get('target_success', 0.7),
+            buffer_size= config.get('buffer_size', 20),
+            lr_param= config.get('lr_param', 0.01), 
+            lr_lambda= config.get('lr_lambda', 0.5),
+            # Checkpoint settings
+            save_freq=50000,   # Save every 50k steps
+            save_path=log_dir,
+            initial_lambda=initial_lambda,
+            initial_history=initial_history
+        )
+        callbacks_list = [doraemon_cb]
+    else:
+        print("--- UDR Mode: Training without DORAEMON ---")
 
     # 5. Run Training
     try:
@@ -127,7 +167,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         reset_timesteps = (resume_step is None)
         total_steps = config['timesteps']
         
-        model.learn(total_timesteps=total_steps, callback=[doraemon_cb], reset_num_timesteps=reset_timesteps)
+        model.learn(total_timesteps=total_steps, callback=callbacks_list, reset_num_timesteps=reset_timesteps)
         
         # Final Save
         model.save(f"{log_dir}/final_model")
@@ -136,6 +176,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             
     except KeyboardInterrupt:
         print("Interrupted! Saving emergency checkpoint...")
-        doraemon_cb.save_checkpoint()
+        if doraemon_cb is not None:
+            doraemon_cb.save_checkpoint()
 
     return model, env, doraemon_cb
