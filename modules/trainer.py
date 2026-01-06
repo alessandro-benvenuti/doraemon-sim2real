@@ -57,7 +57,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
 
     # 3. Initialize Model & Callback Variables
     model = None
-    initial_lambda = 1.0
+    initial_lambda = 5.0
     initial_history = None
     
     # --- BRANCH: RESUME vs NEW ---
@@ -110,10 +110,10 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
     # 4. Setup Callback (With Checkpointing Enabled)
     doraemon_cb = DoraemonCallback(
         training_env=env,
-        target_success=0.8,
-        buffer_size=10, 
-        lr_param=0.05, 
-        lr_lambda=0.1,
+        target_success=0.7,
+        buffer_size=20, 
+        lr_param=0.01, 
+        lr_lambda=0.5,
         # Checkpoint settings
         save_freq=50000,   # Save every 50k steps
         save_path=log_dir,

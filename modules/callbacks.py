@@ -32,6 +32,10 @@ class DoraemonCallback(BaseCallback):
         
         # Initialize Lambda (Allow restoring from checkpoint)
         self.labda = initial_lambda 
+
+        # Track if we have finished warming up
+        self.warmup_complete = False 
+        self.warmup_threshold = target_success  # Wait for x% success before starting DORAEMON
         
         # Checkpointing setup
         self.save_freq = save_freq
@@ -40,6 +44,9 @@ class DoraemonCallback(BaseCallback):
         # RESTORE HISTORY IF RESUMING, ELSE START FRESH
         if initial_history is not None:
             self.history = initial_history
+            # If resuming, check if we were already successful enough to skip warmup
+            if len(self.history['success']) > 0 and self.history['success'][-1] >= self.warmup_thresholds:
+                self.warmup_complete = True
         else:
             self.history = {'entropy': [], 'success': [], 'lambda': []}
         
@@ -59,7 +66,7 @@ class DoraemonCallback(BaseCallback):
                 # We assume Success if Reward > Threshold (e.g. 600 for Hopper)
                 # You might need to adjust this threshold based on your specific task
                 reward = infos[i].get('episode', {}).get('r', 0)
-                is_success = 1.0 if reward > 1400 else 0.0
+                is_success = 1.0 if reward > 1200 else 0.0
                 
                 # 2. Get the Parameters that generated this outcome
                 # We query the specific env instance for the parameters used in the last episode
@@ -71,9 +78,37 @@ class DoraemonCallback(BaseCallback):
                 
                 # 4. Update Distribution if Buffer is Full
                 if len(self.episode_params) >= self.buffer_size:
-                    self.update_distribution()
+                    self._handle_buffer_full()
                     
         return True
+    
+
+    def _handle_buffer_full(self):
+        """
+        Decides whether to Update Distribution or Keep Waiting based on success.
+        """
+        current_success_rate = np.mean(self.episode_outcomes)
+
+        # CASE 1: Still Warming Up
+        if not self.warmup_complete:
+            if current_success_rate >= self.warmup_threshold:
+                # Success! Turn on DORAEMON
+                print(f"\n[DORAEMON] Warmup Complete! Success ({current_success_rate:.2f}) >= Threshold. Activating.")
+                self.warmup_complete = True
+                self.update_distribution()
+            else:
+                # Failure. Reset buffer and keep training on static environment.
+                if self.verbose > 0:
+                    print(f"[DORAEMON] Warmup: Current Success {current_success_rate:.2f} < {self.warmup_threshold}. Staying static.")
+                
+                # Clear buffer so we can collect fresh data
+                self.episode_params = []
+                self.episode_outcomes = []
+        
+        # CASE 2: Already Warmed Up
+        else:
+            self.update_distribution()
+
 
     def update_distribution(self):
         """
@@ -135,7 +170,7 @@ class DoraemonCallback(BaseCallback):
         
         # Safety Clip (prevent extreme physics)
         new_mean = np.clip(new_mean, 0.5, 2.0)
-        new_std = np.clip(new_std, 0.001, 1.0)
+        new_std = np.clip(new_std, 0.001, 0.4)
         
         self.doraemon_env.env_method('set_distribution', new_mean, new_std)
         
