@@ -15,7 +15,14 @@ from stable_baselines3.common.monitor import Monitor
 from env.custom_hopper import *
 
 # Import your NEW wrapper and callback
-from modules.env import GaussianHopperWrapper, GaussianCartPoleWrapper,UDRHopperWrapper,  UDRCartPoleWrapper
+from modules.env import (
+    GaussianHopperWrapper,
+    GaussianCartPoleWrapper,
+    GaussianHalfCheetahWrapper,
+    UDRHopperWrapper,
+    UDRCartPoleWrapper,
+    UDRHalfCheetahWrapper,
+)
 from modules.callbacks import DoraemonCallback
 
 
@@ -29,6 +36,7 @@ def make_wrapped_env(env_id, use_doraemon):
             sys.path.append(project_root)
         import env.custom_hopper # Register env in worker
         import env.custom_carpole # Register env in worker
+        import env.custom_halfcheetah # Register env in worker
 
         env = gym.make(env_id)
         
@@ -38,12 +46,16 @@ def make_wrapped_env(env_id, use_doraemon):
                 env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
             elif 'CartPole' in env_id or 'cartpole' in env_id.lower():
                 env = GaussianCartPoleWrapper(env, initial_mean=1.0, initial_std=0.01)
+            elif 'HalfCheetah' in env_id or 'halfcheetah' in env_id.lower():
+                env = GaussianHalfCheetahWrapper(env, initial_mean=1.0, initial_std=0.01)
         else:
             # UDR: Uniform Domain Randomization
             if 'Hopper' in env_id or 'hopper' in env_id:
                 env= UDRHopperWrapper(env)  # Hopper UDR can be added later if needed
             elif 'CartPole' in env_id or 'cartpole' in env_id.lower():
                 env = UDRCartPoleWrapper(env)
+            elif 'HalfCheetah' in env_id or 'halfcheetah' in env_id.lower():
+                env = UDRHalfCheetahWrapper(env)
         
         return env
     return _init
@@ -119,6 +131,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         if config['normalize']:
             env = VecNormalize(env, norm_obs=True, norm_reward=False, clip_obs=10., training=True)
         
+        model
         if config['algorithm'] == 'SAC':
             model = SAC(
                 'MlpPolicy', 
@@ -140,12 +153,12 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
                 tensorboard_log="./tensorboard_logs/"
             )
 
-    # 4. Setup Callback (Only if DORAEMON is enabled)
-    doraemon_cb = None
-    callbacks_list = []
-    
-    if config['use_doraemon']:
-        doraemon_cb = DoraemonCallback(
+        # 4. Setup Callback (Only if DORAEMON is enabled)
+        doraemon_cb = None
+        callbacks_list = []
+            
+        if config['use_doraemon']:
+            doraemon_cb = DoraemonCallback(
             training_env=env,
             target_success= config.get('target_success', 0.7),
             buffer_size= config.get('buffer_size', 20),
@@ -156,27 +169,27 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             save_path=log_dir,
             initial_lambda=initial_lambda,
             initial_history=initial_history
-        )
-        callbacks_list = [doraemon_cb]
-    else:
-        print("--- UDR Mode: Training without DORAEMON ---")
+            )
+            callbacks_list = [doraemon_cb]
+        else:
+            print("--- UDR Mode: Training without DORAEMON ---")
 
-    # 5. Run Training
-    try:
-        # If resuming, reset_num_timesteps=False prevents TB from overwriting old logs
-        reset_timesteps = (resume_step is None)
-        total_steps = config['timesteps']
-        
-        model.learn(total_timesteps=total_steps, callback=callbacks_list, reset_num_timesteps=reset_timesteps)
-        
-        # Final Save
-        model.save(f"{log_dir}/final_model")
-        if config['normalize']:
-            env.save(f"{log_dir}/final_vecnormalize.pkl")
-            
-    except KeyboardInterrupt:
-        print("Interrupted! Saving emergency checkpoint...")
-        if doraemon_cb is not None:
-            doraemon_cb.save_checkpoint()
+            # 5. Run Training
+        try:
+            # If resuming, reset_num_timesteps=False prevents TB from overwriting old logs
+            reset_timesteps = (resume_step is None)
+            total_steps = config['timesteps']
+                
+            model.learn(total_timesteps=total_steps, callback=callbacks_list, reset_num_timesteps=reset_timesteps)
+                
+                # Final Save
+            model.save(f"{log_dir}/final_model")
+            if config['normalize']:
+                env.save(f"{log_dir}/final_vecnormalize.pkl")
+                
+        except KeyboardInterrupt:
+            print("Interrupted! Saving emergency checkpoint...")
+            if doraemon_cb is not None:
+                doraemon_cb.save_checkpoint()
 
     return model, env, doraemon_cb

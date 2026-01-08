@@ -201,3 +201,72 @@ class GaussianCartPoleWrapper(gym.Wrapper):
         return self.mean, self.std
     
 
+#--------------------- HALFCHEETAH WRAPPERS ---------------------#
+
+class UDRHalfCheetahWrapper(gym.Wrapper):
+    """
+    Uniform Domain Randomization for HalfCheetah masses.
+    Randomizes all body masses except the world/root body (index 0).
+    mass_range_scale: (min, max) multiplier for the masses.
+    """
+    def __init__(self, env, mass_range_scale=(0.8, 1.2)):
+        super().__init__(env)
+        self.mass_range_scale = list(mass_range_scale)
+
+        # Store original masses and choose indices to randomize (exclude index 0)
+        self.original_masses = np.copy(env.unwrapped.model.body_mass)
+        self.mass_indices = list(range(1, len(self.original_masses)))
+
+    def reset(self, **kwargs):
+        low, high = self.mass_range_scale
+        scales = np.random.uniform(low, high, size=len(self.mass_indices))
+
+        new_masses = np.copy(self.original_masses)
+        new_masses[self.mass_indices] *= scales
+        self.unwrapped.model.body_mass[:] = new_masses
+
+        return self.env.reset(**kwargs)
+
+    def set_udr_range(self, new_range):
+        self.mass_range_scale = list(new_range)
+
+
+class GaussianHalfCheetahWrapper(gym.Wrapper):
+    """
+    DORAEMON-style Gaussian randomization for HalfCheetah masses.
+    Learns mean/std for multiplicative scales applied to body masses
+    (all bodies except root/world).
+    """
+    def __init__(self, env, initial_mean=1.0, initial_std=0.001):
+        super().__init__(env)
+
+        # Store original masses and indices to modify (exclude index 0)
+        self.original_masses = np.copy(env.unwrapped.model.body_mass)
+        self.mass_indices = list(range(1, len(self.original_masses)))
+
+        n_params = len(self.mass_indices)
+        self.mean = np.full(n_params, initial_mean, dtype=np.float32)
+        self.std = np.full(n_params, initial_std, dtype=np.float32)
+
+    def reset(self, **kwargs):
+        scales = np.random.normal(self.mean, self.std)
+        scales = np.clip(scales, 0.1, 10.0)
+        self.last_scales = scales
+
+        new_masses = np.copy(self.original_masses)
+        new_masses[self.mass_indices] *= scales
+        self.unwrapped.model.body_mass[:] = new_masses
+
+        return self.env.reset(**kwargs)
+
+    def get_last_scales(self):
+        return self.last_scales
+
+    def set_distribution(self, mean, std):
+        self.mean = np.array(mean, dtype=np.float32)
+        self.std = np.array(std, dtype=np.float32)
+
+    def get_distribution_params(self):
+        return self.mean, self.std
+
+
