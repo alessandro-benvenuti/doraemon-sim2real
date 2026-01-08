@@ -67,7 +67,10 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
     """
     os.makedirs(log_dir, exist_ok=True)
     
-    device = 'cpu'
+    if config.get('device', 'cpu') == 'gpu':
+        device = 'cuda'
+    else:
+        device = 'cpu'
         
     n_envs = config.get('n_envs', 1) if config['vectorize'] else 1
     # On Windows, SubprocVecEnv can have issues. Use DummyVecEnv for CartPole

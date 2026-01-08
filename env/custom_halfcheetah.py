@@ -40,8 +40,8 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         healthy_reward: float = 1.0,
         terminate_when_unhealthy: bool = True,
         healthy_state_range: Tuple[float, float] = (-100.0, 100.0),
-        healthy_z_range: Tuple[float, float] = (0.7, float("inf")),
-        healthy_angle_range: Tuple[float, float] = (-0.2, 0.2),
+        healthy_z_range: Tuple[float, float] = (0.28, 1.0),
+        healthy_angle_range: Tuple[float, float] = (-1.5, 1.5),
         reset_noise_scale: float = 5e-3,
         exclude_current_positions_from_observation: bool = True,
         domain: Optional[str] = None,
@@ -139,20 +139,20 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
 
     @property
     def is_healthy(self):
-        z, angle = self.data.qpos[1:3]
-        state = self.state_vector()[2:]
+        # z, angle = self.data.qpos[1:3]
+        # state = self.state_vector()[2:]
 
-        min_state, max_state = self._healthy_state_range
-        min_z, max_z = self._healthy_z_range
-        min_angle, max_angle = self._healthy_angle_range
+        # min_state, max_state = self._healthy_state_range
+        # min_z, max_z = self._healthy_z_range
+        # min_angle, max_angle = self._healthy_angle_range
 
-        healthy_state = np.all(np.logical_and(min_state < state, state < max_state))
-        healthy_z = min_z < z < max_z
-        healthy_angle = min_angle < angle < max_angle
+        # healthy_state = np.all(np.logical_and(min_state < state, state < max_state))
+        # healthy_z = min_z < z < max_z
+        # healthy_angle = min_angle < angle < max_angle
 
-        is_healthy = all((healthy_state, healthy_z, healthy_angle))
+        # is_healthy = all((healthy_state, healthy_z, healthy_angle))
 
-        return is_healthy
+        return True
 
     def _get_obs(self):
         """Costruisce il vettore delle osservazioni concatenando posizioni e velocità."""
@@ -169,7 +169,11 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         """Esegue un passo di simulazione, calcola reward e osservazione successiva."""
         x_position_before = self.data.qpos[0]
         self.do_simulation(action, self.frame_skip)
+        z, angle = self.data.qpos[1:3]
+        #print(f"\nDEBUG: Altezza z={z:.3f}, Angolo={angle:.3f}") 
+        #print(f"\nTutto qpos: {self.data.qpos}")
         x_position_after = self.data.qpos[0]
+    
         x_velocity = (x_position_after - x_position_before) / self.dt
         
         observation = self._get_obs()
