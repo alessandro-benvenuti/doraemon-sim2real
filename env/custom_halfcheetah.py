@@ -26,7 +26,7 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             "depth_array",
             "rgbd_tuple",
         ],
-        "render_fps": 125,
+        "render_fps": 25,
         # fps set from parent via dt; kept here for consistency
     }
 
@@ -89,16 +89,6 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             default_camera_config=default_camera_config,
             **kwargs,
         )
-
-        self.metadata = {
-            "render_modes": [
-                "human",
-                "rgb_array",
-                "depth_array",
-                "rgbd_tuple",
-            ],
-            "render_fps": int(np.round(1.0 / self.dt)),
-        }
 
         #The observation space consists of the following parts (in order):
         # - qpos (8 elements by default): Position values of the robot’s body parts.
@@ -224,7 +214,29 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             "x_position": self.data.qpos[0],
             "z_distance_from_origin": self.data.qpos[1] - self.init_qpos[1],
         }
+    def reset_model(self):
+        """
+        Resetta lo stato del robot. Viene chiamato automaticamente da env.reset().
+        """
+        # Definiamo l'entità del rumore per la posizione e la velocità
+        noise_low = -self._reset_noise_scale
+        noise_high = self._reset_noise_scale
 
+        # qpos: posizioni delle articolazioni
+        # qvel: velocità delle articolazioni
+        qpos = self.init_qpos + self.np_random.uniform(
+            low=noise_low, high=noise_high, size=self.model.nq
+        )
+        qvel = self.init_qvel + self.np_random.uniform(
+            low=noise_low, high=noise_high, size=self.model.nv
+        )
+
+        # Applichiamo lo stato al simulatore MuJoCo
+        self.set_state(qpos, qvel)
+
+        # Restituiamo l'osservazione iniziale
+        return self._get_obs()
+    
     def set_random_parameters(self):
         """Applica parametri campionati casualmente al modello MuJoCo."""
         self.set_parameters(self.sample_parameters())
