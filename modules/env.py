@@ -215,6 +215,7 @@ class UDRHalfCheetahWrapper(gym.Wrapper):
 
         # Store original masses and choose indices to randomize (exclude index 0)
         self.original_masses = np.copy(env.unwrapped.model.body_mass)
+        # gemini consiglia di tenere fisso il torso (indice 1) e di randomizzare da 2 in poi list(range(2, len(self.original_masses)))
         self.mass_indices = list(range(1, len(self.original_masses)))
 
     def reset(self, **kwargs):

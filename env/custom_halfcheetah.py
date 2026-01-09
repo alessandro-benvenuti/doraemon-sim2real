@@ -45,6 +45,7 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         reset_noise_scale: float = 5e-3,
         exclude_current_positions_from_observation: bool = True,
         domain: Optional[str] = None,
+        mass_shift: float = 0.0,
         **kwargs,
     ):
         utils.EzPickle.__init__(
@@ -124,6 +125,8 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             # Body 1 is often torso in HalfCheetah; protect against out-of-range just in case
             if len(self.model.body_mass) > 1:
                 self.model.body_mass[1] = max(0.1, self.model.body_mass[1]+0.5)
+                if domain == 'shift':  # Shifted environment has a different torso mass (the shift is computed over the source, not the original target)
+                    self.model.body_mass[1] += (mass_shift -1.0)
         elif domain == "target":
             if len(self.model.body_mass) > 1:
                 self.model.body_mass[1] = self.model.body_mass[1] + 0.5
@@ -286,4 +289,11 @@ gym.register(
     entry_point="%s:CustomHalfCheetah" % __name__,
     max_episode_steps=1000,
     kwargs={"domain": "target"},
+)
+
+gym.register(
+        id="CustomHalfCheetah-shift-v0",
+        entry_point="%s:CustomHalfCheetah" % __name__,
+        max_episode_steps=500,
+        kwargs={"domain": "shift"}
 )
