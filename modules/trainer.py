@@ -172,7 +172,8 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             save_freq=50000,   # Save every 50k steps
             save_path=log_dir,
             initial_lambda=initial_lambda,
-            initial_history=initial_history
+            initial_history=initial_history,
+            min_std=config.get('min_std', 0.001)
             )
             callbacks_list = [doraemon_cb]
         else:

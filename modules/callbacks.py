@@ -21,7 +21,7 @@ class DoraemonCallback(BaseCallback):
     def __init__(self, training_env, threshold_reward, target_success=0.8, buffer_size=50, 
                 lr_param=1e-3, lr_lambda=1e-2, verbose=1,
                 # Checkpointing arguments
-                save_freq=0, save_path=None, initial_lambda=1.0, initial_history=None):
+                save_freq=0, save_path=None, initial_lambda=1.0, initial_history=None, min_std=0.001):
         
         super().__init__(verbose)
         self.doraemon_env = training_env
@@ -29,7 +29,7 @@ class DoraemonCallback(BaseCallback):
         self.buffer_size = buffer_size
         self.lr_param = lr_param
         self.lr_lambda = lr_lambda
-        
+        self.min_std = min_std
         # Initialize Lambda (Allow restoring from checkpoint)
         self.labda = initial_lambda 
 
@@ -171,7 +171,7 @@ class DoraemonCallback(BaseCallback):
         
         # Safety Clip (prevent extreme physics)
         new_mean = np.clip(new_mean, 0.5, 2.0)
-        new_std = np.clip(new_std, 0.001, 0.4)
+        new_std = np.clip(new_std, self.min_std, 0.4)
         
         self.doraemon_env.env_method('set_distribution', new_mean, new_std)
         
