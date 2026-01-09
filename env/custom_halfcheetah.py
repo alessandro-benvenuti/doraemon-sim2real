@@ -117,21 +117,29 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         }
 
         # Keep a copy of original masses (useful for wrappers or potential manual DR)
-        self.original_masses = np.copy(self.model.body_mass)
+        #self.original_masses = np.copy(self.model.body_mass)
 
         # Simple domain toggle to mirror Hopper/CartPole structure (optional)
+        # 1. Identifica chiaramente la massa base dal file XML appena caricato
+        base_torso_mass = self.model.body_mass[1]
+
         if domain == "source":
-            # Slightly reduce torso mass to create a mild domain shift
-            # Body 1 is often torso in HalfCheetah; protect against out-of-range just in case
-            if len(self.model.body_mass) > 1:
-                self.model.body_mass[1] = max(0.1, self.model.body_mass[1]+0.5)
-                if domain == 'shift':  # Shifted environment has a different torso mass (the shift is computed over the source, not the original target)
-                    self.model.body_mass[1] += (mass_shift -1.0)
+            # La sorgente è il ghepardo "leggero" (massa base)
+            self.model.body_mass[1] = base_torso_mass
+            
         elif domain == "target":
-            if len(self.model.body_mass) > 1:
-                self.model.body_mass[1] = self.model.body_mass[1] + 0.5
+            # Il target è il ghepardo "pesante" (+1.5kg rispetto al base)
+            self.model.body_mass[1] = base_torso_mass + 1.5
+            
+        elif domain == "shift":
+            # Per i grafici di robustezza: base + valore variabile
+            self.model.body_mass[1] = base_torso_mass + mass_shift
 
-
+        # Sicurezza: impedisci masse fisicamente impossibili
+        self.model.body_mass[1] = max(0.01, self.model.body_mass[1])
+        # Aggiorna la copia delle masse originali DOPO lo shift del dominio 
+        # (così i wrapper di DR randomizzano attorno alla nuova massa specifica del dominio)
+        self.original_masses = np.copy(self.model.body_mass)
     @property
     def healthy_reward(self):
         return self.is_healthy * self._healthy_reward
