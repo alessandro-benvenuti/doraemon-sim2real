@@ -18,7 +18,7 @@ class DoraemonCallback(BaseCallback):
     
     Objective: max J = Entropy + lambda * (SuccessRate - Target)
     """
-    def __init__(self, training_env, target_success=0.8, buffer_size=50, 
+    def __init__(self, training_env, threshold_reward, target_success=0.8, buffer_size=50, 
                 lr_param=1e-3, lr_lambda=1e-2, verbose=1,
                 # Checkpointing arguments
                 save_freq=0, save_path=None, initial_lambda=1.0, initial_history=None):
@@ -37,6 +37,7 @@ class DoraemonCallback(BaseCallback):
         self.warmup_complete = False 
         self.warmup_threshold = target_success  # Wait for x% success before starting DORAEMON
         
+        self.threshold_reward=threshold_reward
         # Checkpointing setup
         self.save_freq = save_freq
         self.save_path = save_path
@@ -66,7 +67,7 @@ class DoraemonCallback(BaseCallback):
                 # We assume Success if Reward > Threshold (e.g. 600 for Hopper)
                 # You might need to adjust this threshold based on your specific task
                 reward = infos[i].get('episode', {}).get('r', 0)
-                is_success = 1.0 if reward > 1200 else 0.0
+                is_success = 1.0 if reward > self.threshold_reward else 0.0
                 
                 # 2. Get the Parameters that generated this outcome
                 # We query the specific env instance for the parameters used in the last episode

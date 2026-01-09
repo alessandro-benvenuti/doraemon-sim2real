@@ -163,6 +163,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         if config['use_doraemon']:
             doraemon_cb = DoraemonCallback(
             training_env=env,
+            threshold_reward= config.get('threshold_reward', 1200),
             target_success= config.get('target_success', 0.7),
             buffer_size= config.get('buffer_size', 20),
             lr_param= config.get('lr_param', 0.01), 
