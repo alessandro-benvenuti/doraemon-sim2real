@@ -46,6 +46,7 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         exclude_current_positions_from_observation: bool = True,
         domain: Optional[str] = None,
         mass_shift: float = 0.0,
+        friction_shift: float = 0.0,
         **kwargs,
     ):
         utils.EzPickle.__init__(
@@ -63,6 +64,8 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             reset_noise_scale,
             exclude_current_positions_from_observation,
             domain,
+            mass_shift,
+            friction_shift,
             **kwargs,
         )
 
@@ -140,6 +143,22 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         # Aggiorna la copia delle masse originali DOPO lo shift del dominio 
         # (così i wrapper di DR randomizzano attorno alla nuova massa specifica del dominio)
         self.original_masses = np.copy(self.model.body_mass)
+        
+        # --- FRICTION HANDLING ---
+        # MuJoCo stores friction coefficients in model.geom_friction
+        # Each row has [sliding, torsional, rolling] friction for each geom
+        # Geom 0 is typically the floor/ground
+        base_floor_friction = self.model.geom_friction[0, 0]  # sliding friction
+        
+        if domain == "friction":
+            # Apply friction shift for robustness testing
+            self.model.geom_friction[0, 0] = base_floor_friction + friction_shift
+        
+        # Ensure friction stays positive
+        self.model.geom_friction[0, 0] = max(0.01, self.model.geom_friction[0, 0])
+        
+        # Store original friction values
+        self.original_friction = np.copy(self.model.geom_friction)
     @property
     def healthy_reward(self):
         return self.is_healthy * self._healthy_reward
