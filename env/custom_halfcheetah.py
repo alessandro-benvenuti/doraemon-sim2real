@@ -123,8 +123,9 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
         #self.original_masses = np.copy(self.model.body_mass)
 
         # Simple domain toggle to mirror Hopper/CartPole structure (optional)
-        # 1. Identifica chiaramente la massa base dal file XML appena caricato
+        # 1. Identifica chiaramente i valori base dal file XML appena caricato
         base_torso_mass = self.model.body_mass[1]
+        base_floor_friction = self.model.geom_friction[0, 0]  # sliding friction del pavimento
 
         if domain == "source":
             # La sorgente è il ghepardo "leggero" (massa base)
@@ -135,29 +136,22 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             self.model.body_mass[1] = base_torso_mass + 1.5
             
         elif domain == "shift":
-            # Per i grafici di robustezza: base + valore variabile
+            # Per i grafici di robustezza massa: base + valore variabile
             self.model.body_mass[1] = base_torso_mass + mass_shift
-
-        # Sicurezza: impedisci masse fisicamente impossibili
-        self.model.body_mass[1] = max(0.01, self.model.body_mass[1])
-        # Aggiorna la copia delle masse originali DOPO lo shift del dominio 
-        # (così i wrapper di DR randomizzano attorno alla nuova massa specifica del dominio)
-        self.original_masses = np.copy(self.model.body_mass)
-        
-        # --- FRICTION HANDLING ---
-        # MuJoCo stores friction coefficients in model.geom_friction
-        # Each row has [sliding, torsional, rolling] friction for each geom
-        # Geom 0 is typically the floor/ground
-        base_floor_friction = self.model.geom_friction[0, 0]  # sliding friction
-        
-        if domain == "friction":
-            # Apply friction shift for robustness testing
+            
+        elif domain == "friction":
+            # Per i grafici di robustezza attrito: base + valore variabile
+            # MuJoCo stores friction in model.geom_friction [sliding, torsional, rolling]
+            # Geom 0 è il pavimento (floor)
             self.model.geom_friction[0, 0] = base_floor_friction + friction_shift
-        
-        # Ensure friction stays positive
+
+        # Sicurezza: impedisci valori fisicamente impossibili
+        self.model.body_mass[1] = max(0.01, self.model.body_mass[1])
         self.model.geom_friction[0, 0] = max(0.01, self.model.geom_friction[0, 0])
         
-        # Store original friction values
+        # Aggiorna le copie dei valori originali DOPO lo shift del dominio 
+        # (così i wrapper di DR randomizzano attorno ai nuovi valori specifici del dominio)
+        self.original_masses = np.copy(self.model.body_mass)
         self.original_friction = np.copy(self.model.geom_friction)
     @property
     def healthy_reward(self):
@@ -323,4 +317,11 @@ gym.register(
         entry_point="%s:CustomHalfCheetah" % __name__,
         max_episode_steps=500,
         kwargs={"domain": "shift"}
+)
+
+gym.register(
+        id="CustomHalfCheetah-friction-v0",
+        entry_point="%s:CustomHalfCheetah" % __name__,
+        max_episode_steps=500,
+        kwargs={"domain": "friction"}
 )
