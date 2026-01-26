@@ -46,6 +46,7 @@ class CustomHopper(MujocoEnv, utils.EzPickle):
         reset_noise_scale: float = 5e-3,
         exclude_current_positions_from_observation: bool = True,
         domain: Optional[str] = None,
+        mass_shift: float = 0.0,
         **kwargs,
     ):
         utils.EzPickle.__init__(
@@ -120,6 +121,9 @@ class CustomHopper(MujocoEnv, utils.EzPickle):
 
         if domain == 'source':  # Source environment has an imprecise torso mass (1kg shift)
             self.model.body_mass[1] -= 1.0
+
+        if domain == 'shift':  # Shifted environment has a different torso mass (the shift is computed over the source, not the original target)
+            self.model.body_mass[1] += (mass_shift -1.0)
 
 
     @property
@@ -265,6 +269,13 @@ gym.register(
         entry_point="%s:CustomHopper" % __name__,
         max_episode_steps=500,
         kwargs={"domain": "target"}
+)
+
+gym.register(
+        id="CustomHopper-shift-v0",
+        entry_point="%s:CustomHopper" % __name__,
+        max_episode_steps=500,
+        kwargs={"domain": "shift"}
 )
 
 

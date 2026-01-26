@@ -14,7 +14,7 @@ from stable_baselines3.common.monitor import Monitor
 from env.custom_hopper import *
 
 # Import your NEW wrapper and callback
-from modules.env import GaussianHopperWrapper
+from modules.env import GaussianHopperWrapper, BetaHopperWrapper
 from modules.callbacks import DoraemonCallback
 
 
@@ -30,7 +30,7 @@ def make_wrapped_env(env_id, use_doraemon):
         
         env = gym.make(env_id)
         if use_doraemon:
-            env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
+            env = BetaHopperWrapper(env, initial_alpha=7.0, initial_beta=7.0)
         return env
     return _init
 
@@ -57,7 +57,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
 
     # 3. Initialize Model & Callback Variables
     model = None
-    initial_lambda = 1.0
+    initial_lambda = 5.0
     initial_history = None
     
     # --- BRANCH: RESUME vs NEW ---
@@ -77,19 +77,28 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         
         # B. Load Model & Replay Buffer
         model = SAC.load(f"{ckpt_dir}/model_{resume_step}", env=env, device=device)
-        model.load_replay_buffer(f"{ckpt_dir}/replay_buffer_{resume_step}")
-        print("Loaded Model and Replay Buffer.")
+        print("Loaded Model.")
+        
+        # --- MODIFICA QUI ---
+        buffer_path = f"{ckpt_dir}/replay_buffer_{resume_step}.pkl"
+        if os.path.exists(buffer_path):
+            model.load_replay_buffer(buffer_path)
+            print("Loaded Replay Buffer successfully.")
+        else:
+            print(f"WARNING: Replay Buffer {buffer_path} not found!")
+            print("Resuming with EMPTY buffer. Performance might drop initially while refilling.")
+        # --------------------
         
         # C. Load DORAEMON State
         with open(f"{ckpt_dir}/doraemon_state_{resume_step}.json", "r") as f:
             state = json.load(f)
             
         # Apply loaded physics to the env immediately
-        env.env_method('set_distribution', state['mean'], state['std'])
+        env.env_method('set_beta_distribution', state['alpha'], state['beta'])
         initial_lambda = state['lambda']
         initial_history = state.get('history', None)
 
-        print(f"Restored DORAEMON: Lambda={initial_lambda:.2f}, Mean={state['mean']}, Std={state['std']}")
+        print(f"Restored DORAEMON: Lambda={initial_lambda:.2f}, Alpha={state['alpha']}, Beta={state['beta']}")
         
     else:
         # --- NEW TRAINING ---
@@ -104,16 +113,18 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             verbose=1, 
             learning_rate=config["lr"],
             device=device,
-            tensorboard_log="./tensorboard_logs/"
+            tensorboard_log="./tensorboard_logs/",
+            gradient_steps=config.get('gradient_steps', 1),
+            train_freq=config.get('train_freq', 1),
         )
 
     # 4. Setup Callback (With Checkpointing Enabled)
     doraemon_cb = DoraemonCallback(
         training_env=env,
-        target_success=0.8,
-        buffer_size=10, 
-        lr_param=0.05, 
-        lr_lambda=0.1,
+        target_success=0.65,
+        buffer_size=100, 
+        lr_param=0.01, 
+        lr_lambda=0.01,
         # Checkpoint settings
         save_freq=50000,   # Save every 50k steps
         save_path=log_dir,
