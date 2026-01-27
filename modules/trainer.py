@@ -29,8 +29,10 @@ def make_wrapped_env(env_id, mode='source'):
         import env.custom_hopper # Register env in worker
         
         env = gym.make(env_id)
-        if mode == 'doraemon':
+        if mode == 'doraemon-beta':
             env = BetaHopperWrapper(env, initial_alpha=7.0, initial_beta=7.0)
+        elif mode == 'doraemon-gaussian':
+            env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
         else:
             env = UDRHopperWrapper(env, udr_range=(0.5, 2.0))
         return env
@@ -169,4 +171,7 @@ def train_agent(config, log_dir="./logs/", model_name="final_model", resume_step
         print("Interrupted! Saving emergency checkpoint...")
         doraemon_cb.save_checkpoint()
 
-    return model, env, doraemon_cb
+    if mode.startswith('doraemon'):
+        return model, env, doraemon_cb
+    else:
+        return model, env, None

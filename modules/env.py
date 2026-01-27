@@ -63,14 +63,10 @@ class GaussianHopperWrapper(gym.Wrapper):
 
         # Indices definition
         self.mass_indices = [2, 3, 4] # Thigh, Leg, Foot
-        self.geom_indices = [0, 1, 2, 3, 4] # Floor + Robot parts
-        self.dof_indices = [3, 4, 5] # Thigh, Leg, Foot joints
 
         # --- PARAMETER MAPPING ---
         # Param 0,1,2: Masses (Thigh, Leg, Foot)
-        # Param 3: Global Friction Scale (Multiplier for all geoms)
-        # Param 4: Global Damping Scale (Multiplier for all joints)
-        self.n_params = 5 
+        self.n_params = 3 
         
         self.mean = np.full(self.n_params, initial_mean, dtype=np.float32)
         self.std = np.full(self.n_params, initial_std, dtype=np.float32)
@@ -88,17 +84,6 @@ class GaussianHopperWrapper(gym.Wrapper):
         new_masses = np.copy(self.original_masses)
         new_masses[self.mass_indices] *= scales[0:3]
         self.unwrapped.model.body_mass[:] = new_masses
-
-        # B. Update Friction (Global Scale)
-        # friction array is (n_geoms, 3) -> sliding, torsional, rolling. We scale sliding (idx 0).
-        new_friction = np.copy(self.original_friction)
-        new_friction[self.geom_indices, 0] *= scales[3] 
-        self.unwrapped.model.geom_friction[:] = new_friction
-        
-        # C. Update Damping (Global Scale)
-        new_damping = np.copy(self.original_damping)
-        new_damping[self.dof_indices] *= scales[4]
-        self.unwrapped.model.dof_damping[:] = new_damping
 
         return self.env.reset(**kwargs)
 
