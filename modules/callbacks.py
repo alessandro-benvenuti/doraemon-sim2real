@@ -11,6 +11,225 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import VecNormalize, sync_envs_normalization
 from stable_baselines3.common.callbacks import BaseCallback
 
+class BetaDoraemonCallback(BaseCallback):
+    """
+    DORAEMON: Optimizes the distribution of environment parameters (masses)
+    to Maximize Entropy subject to a Success Rate constraint.
+    
+    Objective: max J = Entropy + lambda * (SuccessRate - Target)
+    """
+    def __init__(self, training_env, target_success=0.8, buffer_size=50, 
+                lr_param=1e-3, lr_lambda=1e-2, verbose=1,
+                # Checkpointing arguments
+                save_freq=0, save_path=None, initial_lambda=1.0, initial_history=None):
+        
+        super().__init__(verbose)
+        self.doraemon_env = training_env
+        self.target_success = target_success
+        self.buffer_size = buffer_size
+        self.lr_param = lr_param
+        self.lr_lambda = lr_lambda
+        
+        # Initialize Lambda (Allow restoring from checkpoint)
+        self.labda = initial_lambda 
+
+        # Track if we have finished warming up
+        self.warmup_complete = False 
+        self.warmup_threshold = target_success  # Wait for x% success before starting DORAEMON
+        
+        # Checkpointing setup
+        self.save_freq = save_freq
+        self.save_path = save_path
+
+        # RESTORE HISTORY IF RESUMING, ELSE START FRESH
+        if initial_history is not None:
+            self.history = initial_history
+            # If resuming, check if we were already successful enough to skip warmup
+            if len(self.history['success']) > 0 and self.history['success'][-1] >= self.warmup_threshold:
+                self.warmup_complete = True
+        else:
+            self.history = {'entropy': [], 'success': [], 'lambda': []}
+        
+        # Buffers
+        self.episode_params = []
+        self.episode_outcomes = []
+        self.history = {'entropy': [], 'success': [], 'lambda': [], 'alpha_mean': [], 'beta_mean': []}
+
+    def _on_step(self) -> bool:
+        # Check if any environment in the vectorized env is done
+        dones = self.locals['dones']
+        infos = self.locals['infos']
+        
+        for i, done in enumerate(dones):
+            if done:
+                # 1. Get the Outcome (Success/Failure)
+                # We assume Success if Reward > Threshold (e.g. 600 for Hopper)
+                # You might need to adjust this threshold based on your specific task
+                reward = infos[i].get('episode', {}).get('r', 0)
+                is_success = 1.0 if reward > 1200 else 0.0
+                
+                # 2. Get the Parameters that generated this outcome
+                # We query the specific env instance for the parameters used in the last episode
+                last_scales = self.doraemon_env.env_method('get_last_scales', indices=[i])[0]
+                
+                # 3. Store in Buffer
+                self.episode_params.append(last_scales)
+                self.episode_outcomes.append(is_success)
+                
+                # 4. Update Distribution if Buffer is Full
+                if len(self.episode_params) >= self.buffer_size:
+                    self._handle_buffer_full()
+
+        if self.save_freq > 0 and self.n_calls % self.save_freq == 0:
+            self.save_checkpoint()
+                    
+        return True
+    
+
+    def _handle_buffer_full(self):
+        """
+        Decides whether to Update Distribution or Keep Waiting based on success.
+        """
+        current_success_rate = np.mean(self.episode_outcomes)
+
+        alpha, beta = self.doraemon_env.env_method('get_distribution_params', indices=[0])[0]
+
+        # History Logging
+        self.history['success'].append(current_success_rate)
+        self.history['lambda'].append(self.labda)
+        # Entropy Logging
+        dist = torch.distributions.Beta(torch.tensor(alpha), torch.tensor(beta))
+        self.history['entropy'].append(dist.entropy().sum().item())
+        self.history['alpha_mean'].append(alpha.mean())
+        self.history['beta_mean'].append(beta.mean())
+
+        # CASE 1: Still Warming Up
+        if not self.warmup_complete:
+            if current_success_rate >= self.warmup_threshold:
+                # Success! Turn on DORAEMON
+                print(f"\n[DORAEMON] Warmup Complete! Success ({current_success_rate:.2f}) >= Threshold. Activating.")
+                self.warmup_complete = True
+                self.update_distribution()
+            else:
+                # Failure. Reset buffer and keep training on static environment.
+                if self.verbose > 0:
+                    print(f"[DORAEMON] Warmup: Current Success {current_success_rate:.2f} < {self.warmup_threshold}. Staying static.")
+                
+                # Clear buffer so we can collect fresh data
+                self.episode_params = []
+                self.episode_outcomes = []
+        
+        # CASE 2: Already Warmed Up
+        else:
+            self.update_distribution()
+
+
+    def update_distribution(self):
+        """
+        Performs a gradient step to update the Beta distribution parameters.
+        """
+        # 1. Retrieve current Alpha and Beta parameters
+        current_alpha_np, current_beta_np = self.doraemon_env.env_method('get_distribution_params', indices=[0])[0]
+        
+        # Optimize in Log-Space to ensure Alpha/Beta > 0
+        log_alpha = torch.tensor(np.log(current_alpha_np), dtype=torch.float32, requires_grad=True)
+        log_beta = torch.tensor(np.log(current_beta_np), dtype=torch.float32, requires_grad=True)
+        
+        samples = torch.tensor(np.array(self.episode_params), dtype=torch.float32) # Values in [0, 1]
+        successes = torch.tensor(np.array(self.episode_outcomes), dtype=torch.float32)
+        
+        # 2. Define Beta Distribution
+        # Alpha and Beta must be > 0
+        dist = torch.distributions.Beta(torch.exp(log_alpha), torch.exp(log_beta))
+        
+        # A. Entropy (DORAEMON pushes towards Alpha=1, Beta=1 -> Uniform)
+        entropy = dist.entropy().sum()
+        
+        # B. REINFORCE (Expected Success)
+        log_probs = dist.log_prob(samples).sum(dim=1)
+        baseline = successes.mean()
+        reinforce_loss = (successes - baseline) * log_probs
+        
+        loss = - (entropy + self.labda * reinforce_loss.mean())
+        
+        # 3. Optimization Step
+        optimizer = torch.optim.Adam([log_alpha, log_beta], lr=self.lr_param)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        # 4. Update Lambda (Dual Ascent)
+        avg_success = successes.mean().item()
+        error = self.target_success - avg_success
+        self.labda += self.lr_lambda * error
+        self.labda = max(0.0, self.labda)
+        
+        # 5. Push all'Env
+        new_alpha = torch.exp(log_alpha).detach().numpy()
+        new_beta = torch.exp(log_beta).detach().numpy()
+        
+        # Clip for stability
+        new_alpha = np.clip(new_alpha, 0.1, 100.0)
+        new_beta = np.clip(new_beta, 0.1, 100.0)
+        
+        self.doraemon_env.env_method('set_beta_distribution', new_alpha, new_beta)
+
+        # clear Buffers
+        self.episode_params = []
+        self.episode_outcomes = []
+        
+        # Logging
+        if self.verbose > 0:
+            print(f"[DORAEMON] Step {self.num_timesteps}: Success={avg_success:.2f} | Alpha_mean={new_alpha.mean():.2f} | Beta_mean={new_beta.mean():.2f}")
+
+    def save_checkpoint(self):
+        """Saves Model, ReplayBuffer, VecNormalize stats, and DORAEMON state."""
+        save_dir = os.path.join(self.save_path, "checkpoints")
+        os.makedirs(save_dir, exist_ok=True)
+        step = self.num_timesteps
+        
+        print(f"Saving checkpoint at step {step}...")
+
+        # 1. Get current physics params
+        alpha, beta = self.doraemon_env.env_method('get_distribution_params', indices=[0])[0]
+
+        sanitized_history = {
+            key: [float(x) for x in value_list] 
+            for key, value_list in self.history.items()
+        }
+        
+        # 2. Save DORAEMON specific state (JSON)
+        state = {
+            "timesteps": step,
+            "lambda": float(self.labda),
+            "alpha": alpha.tolist(),
+            "beta": beta.tolist(),
+            "history": sanitized_history
+        }
+        with open(f"{save_dir}/doraemon_state_{step}.json", "w") as f:
+            json.dump(state, f, indent=4)
+            
+        # 3. Save SB3 Components
+        self.model.save(f"{save_dir}/model_{step}")
+        self.model.save_replay_buffer(f"{save_dir}/replay_buffer_{step}")
+        
+        # 4. Save Normalization Stats (Critical!)
+        if hasattr(self.doraemon_env, 'save'):
+            self.doraemon_env.save(f"{save_dir}/vecnormalize_{step}.pkl")
+
+# modules/callbacks.py
+# Callback implementing DORAEMON-Lite to adapt mass randomization based on success rate.
+# This handles the "Auto-Tuning" of the environment difficulty.
+
+import os
+import json
+import torch
+import numpy as np
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import VecNormalize, sync_envs_normalization
+from stable_baselines3.common.callbacks import BaseCallback
+
 class GaussianDoraemonCallback(BaseCallback):
     """
     DORAEMON: Optimizes the distribution of environment parameters (masses)

@@ -69,3 +69,57 @@ The experiment highlights a crucial distinction between **Training Performance**
 * **Inference Phase:** The resulting policy, having survived the high-variance training regime, found the Target Environment "easy" by comparison.
 
 **Conclusion:** The apparent degradation in training metrics was a necessary cost for achieving generalization. The agent successfully transitioned from a "Fragile Expert" (Step 1.2M, Success=1.0, Low Noise) to a "Robust Generalist" (Final Step, Success=0.6, High Noise), solving the primary objective of Zero-Shot Transfer.
+
+
+
+---
+---
+
+
+# Torso Mass Shift Robustness Analysis
+
+This section analyzes the performance of the **Doraemon** agent when subjected to variations in torso mass. The objective is to evaluate the policy's zero-shot robustness to dynamic parameter shifts that were not explicitly encountered during training.
+
+![Figure 3](pictures/Different_mass_shifts.png)
+
+## 1. Performance Overview
+
+The agent demonstrates strong robustness within the mass shift range of . Within this "effective window," the mean reward remains comparable to or exceeds the baseline performance (approx. 1800).
+
+* **Peak Performance:** Interestingly, the absolute peak performance is not observed at the nominal mass (), but rather at a slight mass reduction of  ( of baseline).
+* **Stability:** The agent maintains over  of its baseline performance even when the torso mass is reduced by .
+
+## 2. Gaussian-like Distribution
+
+The performance curve follows a distinct **Gaussian-like shape**. This behavior correlates with the training methodology, as the Doraemon agent was trained over a Gaussian distribution of dynamic parameters. The policy effectively generalizes well to the mean of the training distribution but naturally degrades as the environmental parameters shift toward the tails (extreme variations).
+
+## 3. Asymmetry and Sensitivity
+
+While the performance is generally robust, there is a notable asymmetry in how the agent handles lighter versus heavier torso masses:
+
+* **Preference for Lighter Masses:** Within the effective range, the agent performs slightly better with mass reductions. For instance, at , the agent retains  performance, whereas at , performance drops significantly to .
+* **Failure Modes:** The failure boundaries are distinct.
+* **Positive Shift ( kg):** Performance degrades gradually (linear decay). The agent struggles but retains partial functionality ( at ).
+* **Negative Shift ( kg):** Performance suffers a catastrophic drop-off. At , the reward collapses to . This suggests that while the agent prefers slightly lighter loads, it lacks the control authority or friction management required when the torso becomes extremely light.
+
+
+
+## 4. Generalization to Unseen Dynamics
+
+It is important to note that the specific **torso mass shift** applied here represents a domain parameter that the model has **never seen during training**. The training process involved domain randomization, but this specific isolation of the torso mass variable serves as an out-of-distribution test. The agent's ability to maintain near-baseline performance across a  span () indicates a high degree of generalized robustness to unseen physical dynamics.
+
+---
+
+## Additional Considerations for Your Paper/Report
+
+I noticed a few extra details in the graphs that you might want to consider adding or investigating further:
+
+1. **High Variance at Baseline:** Looking at the error bars (the black lines on top of the blue bars), there is surprisingly high variance at **0.0 (Baseline)** and **+1.0**. In contrast, the variance at **-0.5** and **-1.0** seems much smaller.
+* *Insight:* This implies the model is actually *more consistent* and reliable when the torso is slightly lighter than the default configuration.
+
+
+2. **The "Cliff" at -2.0:** The drop from -1.5 (97%) to -2.0 (14%) is sudden.
+* *Insight:* You might want to hypothesize why this happens. Is the robot becoming too light to maintain ground traction? Is the center of mass shifting so much that the control PIDs are unstable? This "cliff" behavior is different from the gradual slope seen on the positive side.
+
+
+3. **Visualizing the "Effective Range":** In your final paper, you might want to explicitly shade the background of the graph from -1.5 to +1.0 in green (or a light color) to visually highlight the "robust zone" you mentioned.

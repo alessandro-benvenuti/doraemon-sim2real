@@ -1,1 +1,9 @@
-notebooks/logs/
+# Ignore the entire checkpoints folder content
+notebooks/logs/checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Mac system files
+.DS_Storenotebooks/logs/
