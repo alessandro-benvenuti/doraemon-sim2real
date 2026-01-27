@@ -15,7 +15,7 @@ from env.custom_hopper import *
 
 # Import your NEW wrapper and callback
 from modules.env import GaussianHopperWrapper, BetaHopperWrapper, UDRHopperWrapper
-from modules.callbacks import DoraemonCallback
+from modules.callbacks import BetaDoraemonCallback
 
 
 def make_wrapped_env(env_id, mode='source'):
@@ -136,7 +136,7 @@ def train_agent(config, log_dir="./logs/", model_name="final_model", resume_step
     
     if mode == 'doraemon':
         # Only use DORAEMON callback for the adaptive agent
-        doraemon_cb = DoraemonCallback(
+        doraemon_cb = BetaDoraemonCallback(
             training_env=env,
             target_success=0.65,
             buffer_size=100, 

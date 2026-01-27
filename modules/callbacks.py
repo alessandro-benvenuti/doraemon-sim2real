@@ -11,7 +11,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import VecNormalize, sync_envs_normalization
 from stable_baselines3.common.callbacks import BaseCallback
 
-class DoraemonCallback(BaseCallback):
+class BetaDoraemonCallback(BaseCallback):
     """
     DORAEMON: Optimizes the distribution of environment parameters (masses)
     to Maximize Entropy subject to a Success Rate constraint.

@@ -9,68 +9,7 @@ import numpy as np
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-def plot_learning_curve(log_dir, title="Learning Curve"):
-    """
-    Reads all monitor files in log_dir and plots smoothed rewards.
-    Robust to corrupted lines and different naming conventions.
-    """
-    # 1. Find files (support both naming conventions)
-    files = glob.glob(f"{log_dir}/*.monitor.csv")
-    if not files:
-        files = glob.glob(f"{log_dir}/monitor.csv")
-        
-    if not files:
-        print(f"No monitor files found in {log_dir}")
-        return
-
-    print(f"Found {len(files)} log files: {[os.path.basename(f) for f in files]}")
-
-    data_frames = []
-    for file in files:
-        try:
-            # skiprows=1 handles the JSON header
-            # on_bad_lines='skip' ignores corrupted lines
-            df = pd.read_csv(file, skiprows=1, on_bad_lines='skip')
-            data_frames.append(df)
-        except Exception as e:
-            print(f"Could not read {file}: {e}")
-            continue
-            
-    if not data_frames:
-        print("No valid data found to plot.")
-        return
-
-    # 2. Combine and Sort
-    df_concat = pd.concat(data_frames)
-    df_concat = df_concat.sort_values(by='t') # Sort by walltime
-    
-    # 3. Smoothing
-    window_size = 50
-    if len(df_concat) >= window_size:
-        df_concat['r_smooth'] = df_concat['r'].rolling(window=window_size).mean()
-        
-    # 4. Plot
-    plt.figure(figsize=(10, 5))
-    
-    # Use 'l' (episode length) cumsum to estimate total timesteps
-    x_axis = df_concat['l'].cumsum()
-    
-    plt.plot(x_axis, df_concat['r'], alpha=0.3, color='gray', label='Raw Reward')
-    
-    if 'r_smooth' in df_concat:
-        plt.plot(x_axis, df_concat['r_smooth'], color='blue', linewidth=2, label=f'Smoothed ({window_size})')
-    
-    plt.xlabel("Total Timesteps")
-    plt.ylabel("Reward")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.show()
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
-def plot_doraemon_dynamics(doraemon_callback):
+def plot_doraemon_dynamics_beta(doraemon_callback):
     """
     Plots DORAEMON dynamics adapting to available data.
     If Alpha/Beta are missing (old checkpoints), it plots only Success, Lambda, and Entropy.
