@@ -90,11 +90,11 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
 
     # 3. Initialize Model & Callback Variables
     model = None
-    initial_lambda = 5.0
     initial_history = None
     
     # --- BRANCH: RESUME vs NEW ---
     if resume_step is not None:
+        doraemon_cb = None
         print(f"--- RESUMING TRAINING FROM STEP {resume_step} ---")
         ckpt_dir = os.path.join(log_dir, "checkpoints")
         
@@ -171,7 +171,7 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             # Checkpoint settings
             save_freq=50000,   # Save every 50k steps
             save_path=log_dir,
-            initial_lambda=initial_lambda,
+            initial_lambda=config.get('initial_lambda', 1.0),
             initial_history=initial_history,
             min_std=config.get('min_std', 0.001)
             )

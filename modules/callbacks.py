@@ -31,7 +31,7 @@ class DoraemonCallback(BaseCallback):
         self.lr_lambda = lr_lambda
         self.min_std = min_std
         # Initialize Lambda (Allow restoring from checkpoint)
-        self.labda = initial_lambda 
+        self.labda = initial_lambda
 
         # Track if we have finished warming up
         self.warmup_complete = False 
@@ -80,6 +80,11 @@ class DoraemonCallback(BaseCallback):
                 # 4. Update Distribution if Buffer is Full
                 if len(self.episode_params) >= self.buffer_size:
                     self._handle_buffer_full()
+        
+        # 5. Save Checkpoint if needed
+        if self.save_freq > 0 and self.num_timesteps % self.save_freq == 0 and self.num_timesteps > 0:
+            print(f"[DORAEMON] Saving Checkpoint at step {self.num_timesteps}...")
+            self.save_checkpoint()
                     
         return True
     

@@ -204,60 +204,65 @@ class GaussianCartPoleWrapper(gym.Wrapper):
 #--------------------- HALFCHEETAH WRAPPERS ---------------------#
 
 class UDRHalfCheetahWrapper(gym.Wrapper):
-    """
-    Uniform Domain Randomization for HalfCheetah masses.
-    Randomizes all body masses except the world/root body (index 0).
-    mass_range_scale: (min, max) multiplier for the masses.
-    """
-    def __init__(self, env, mass_range_scale=(0.8, 1.2)):
+    def __init__(self, env, mass_range=(0.2, 2.0), friction_range=(0.2, 2.0)):
         super().__init__(env)
-        self.mass_range_scale = list(mass_range_scale)
+        self.mass_range = mass_range
+        self.friction_range = friction_range
 
-        # Store original masses and choose indices to randomize (exclude index 0)
+        # Indici: 2-8 (esclude world e torso)
         self.original_masses = np.copy(env.unwrapped.model.body_mass)
-        # gemini consiglia di tenere fisso il torso (indice 1) e di randomizzare da 2 in poi list(range(2, len(self.original_masses)))
         self.mass_indices = list(range(2, len(self.original_masses)))
+        
+        # Frizione originale del suolo
+        self.original_friction = np.copy(env.unwrapped.model.geom_friction[0][0])
 
     def reset(self, **kwargs):
-        low, high = self.mass_range_scale
-        scales = np.random.uniform(low, high, size=len(self.mass_indices))
+        # Campionamento asimmetrico: un valore diverso per ogni indice di massa
+        mass_scales = np.random.uniform(self.mass_range[0], self.mass_range[1], size=len(self.mass_indices))
+        # Campionamento frizione
+        friction_scale = np.random.uniform(self.friction_range[0], self.friction_range[1])
 
+        # Applica Masse
         new_masses = np.copy(self.original_masses)
-        new_masses[self.mass_indices] *= scales
-        print("\n\tNew Masses:", new_masses)
+        new_masses[self.mass_indices] *= mass_scales
         self.unwrapped.model.body_mass[:] = new_masses
+
+        # Applica Frizione (Floor geom index 0)
+        self.unwrapped.model.geom_friction[0][0] = self.original_friction * friction_scale
 
         return self.env.reset(**kwargs)
 
-    def set_udr_range(self, new_range):
-        self.mass_range_scale = list(new_range)
-
 
 class GaussianHalfCheetahWrapper(gym.Wrapper):
-    """
-    DORAEMON-style Gaussian randomization for HalfCheetah masses.
-    Learns mean/std for multiplicative scales applied to body masses
-    (all bodies except root/world).
-    """
-    def __init__(self, env, initial_mean=1.0, initial_std=0.001):
+    def __init__(self, env, initial_mean=1.0, initial_std=0.1):
         super().__init__(env)
 
-        # Store original masses and indices to modify (exclude index 0)
         self.original_masses = np.copy(env.unwrapped.model.body_mass)
         self.mass_indices = list(range(2, len(self.original_masses)))
+        self.original_friction = np.copy(env.unwrapped.model.geom_friction[0][0])
 
-        n_params = len(self.mass_indices)
-        self.mean = np.full(n_params, initial_mean, dtype=np.float32)
-        self.std = np.full(n_params, initial_std, dtype=np.float32)
+        # Parametri: 6 masse (arti) + 1 frizione = 7 parametri totali
+        # (Se includi il torso sono 8, ma meglio tenerlo fisso per il test)
+        self.n_params = len(self.mass_indices) + 1
+        
+        self.mean = np.full(self.n_params, initial_mean, dtype=np.float32)
+        self.std = np.full(self.n_params, initial_std, dtype=np.float32)
+        self.last_scales = None
 
     def reset(self, **kwargs):
+        # Campionamento asimmetrico da distribuzione Gaussiana
         scales = np.random.normal(self.mean, self.std)
-        scales = np.clip(scales, 0.1, 10.0)
+        # Clip per evitare valori fisicamente instabili
+        scales = np.clip(scales, 0.05, 5.0) 
         self.last_scales = scales
 
+        # 1. Update Masse (indici 0 a n-2 di scales)
         new_masses = np.copy(self.original_masses)
-        new_masses[self.mass_indices] *= scales
+        new_masses[self.mass_indices] *= scales[:-1]
         self.unwrapped.model.body_mass[:] = new_masses
+
+        # 2. Update Frizione (ultimo indice di scales)
+        self.unwrapped.model.geom_friction[0][0] = self.original_friction * scales[-1]
 
         return self.env.reset(**kwargs)
 
@@ -265,10 +270,9 @@ class GaussianHalfCheetahWrapper(gym.Wrapper):
         return self.last_scales
 
     def set_distribution(self, mean, std):
+        # Importante: assicurati che la lunghezza di mean/std corrisponda a n_params
         self.mean = np.array(mean, dtype=np.float32)
         self.std = np.array(std, dtype=np.float32)
 
     def get_distribution_params(self):
         return self.mean, self.std
-
-
