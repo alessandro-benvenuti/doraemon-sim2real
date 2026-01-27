@@ -15,7 +15,6 @@ class BetaDoraemonCallback(BaseCallback):
     """
     DORAEMON: Optimizes the distribution of environment parameters (masses)
     to Maximize Entropy subject to a Success Rate constraint.
-    
     Objective: max J = Entropy + lambda * (SuccessRate - Target)
     """
     def __init__(self, training_env, target_success=0.8, buffer_size=50, 
@@ -217,18 +216,7 @@ class BetaDoraemonCallback(BaseCallback):
         if hasattr(self.doraemon_env, 'save'):
             self.doraemon_env.save(f"{save_dir}/vecnormalize_{step}.pkl")
 
-# modules/callbacks.py
-# Callback implementing DORAEMON-Lite to adapt mass randomization based on success rate.
-# This handles the "Auto-Tuning" of the environment difficulty.
 
-import os
-import json
-import torch
-import numpy as np
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.vec_env import VecNormalize, sync_envs_normalization
-from stable_baselines3.common.callbacks import BaseCallback
 
 class GaussianDoraemonCallback(BaseCallback):
     """

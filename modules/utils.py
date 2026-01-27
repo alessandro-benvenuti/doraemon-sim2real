@@ -230,4 +230,3 @@ def plot_doraemon_dynamics(doraemon_callback):
 
     plt.tight_layout()
     plt.show()
-    return mean_reward, mean_reward_real

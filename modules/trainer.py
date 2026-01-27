@@ -23,7 +23,7 @@ from modules.env import (
     UDRCartPoleWrapper,
     UDRHalfCheetahWrapper,
 )
-from modules.callbacks import GaussianDoraemonCallback, BetaDoraemonCallback
+from modules.callbacks import GaussianDoraemonCallback
 
 
 
@@ -161,14 +161,11 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         doraemon_cb = None
         callback= None
         callbacks_list = []
-        if config['gaussian_callback']:
-            callback= GaussianDoraemonCallback 
-        if config['beta_callback']:
-            callback= BetaDoraemonCallback
+        
         
             
         if config['use_doraemon']:
-            doraemon_cb = callback(
+            doraemon_cb = GaussianDoraemonCallback(
             training_env=env,
             threshold_reward= config.get('threshold_reward', 1200),
             target_success= config.get('target_success', 0.7),
