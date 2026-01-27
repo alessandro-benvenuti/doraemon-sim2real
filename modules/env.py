@@ -7,32 +7,45 @@ import numpy as np
 
 class UDRHopperWrapper(gym.Wrapper):
     """
-    Randomizes Thigh(2), Leg(3), Foot(4) masses.
-    mass_range_scale: Tuple (min, max) multiplier for the masses.
+    Uniform Domain Randomization for Hopper.
+    Randomizes: 3 Masses, Global Friction, and Global Damping.
     """
-    def __init__(self, env, mass_range_scale=(0.8, 1.2)):
+    def __init__(self, env, udr_range=(0.5, 2.0)):
         super().__init__(env)
-        # Convert to list so it is mutable (needed for DORAEMON)
-        self.mass_range_scale = list(mass_range_scale)
+        self.udr_range = list(udr_range)
         
-        self.original_masses = np.copy(env.unwrapped.model.body_mass) # Store original masses
+        # Store original values
+        self.original_masses = np.copy(env.unwrapped.model.body_mass)
+        self.original_friction = np.copy(env.unwrapped.model.geom_friction)
+        self.original_damping = np.copy(env.unwrapped.model.dof_damping)
+
+        # Indices (matching BetaHopperWrapper)
         self.mass_indices = [2, 3, 4] # Thigh, Leg, Foot
+        self.geom_indices = [0, 1, 2, 3, 4] # Floor + Robot parts
+        self.dof_indices = [3, 4, 5] # Thigh, Leg, Foot joints
+        self.n_params = 5 
 
     def reset(self, **kwargs):
-        low, high = self.mass_range_scale
+        low, high = self.udr_range
+        # Sample 5 multipliers uniformly
+        scales = np.random.uniform(low, high, size=self.n_params)
         
-        # Sample uniform distribution
-        scales = np.random.uniform(low, high, size=len(self.mass_indices))
-        
+        # 1. Apply Masses
         new_masses = np.copy(self.original_masses)
-        new_masses[self.mass_indices] *= scales
+        new_masses[self.mass_indices] *= scales[0:3]
         self.unwrapped.model.body_mass[:] = new_masses
 
+        # 2. Apply Global Friction
+        new_friction = np.copy(self.original_friction)
+        new_friction[self.geom_indices, 0] *= scales[3] 
+        self.unwrapped.model.geom_friction[:] = new_friction
+        
+        # 3. Apply Global Damping
+        new_damping = np.copy(self.original_damping)
+        new_damping[self.dof_indices] *= scales[4]
+        self.unwrapped.model.dof_damping[:] = new_damping
+
         return self.env.reset(**kwargs)
-    
-    def set_udr_range(self, new_range):
-        """Helper method to set new UDR range from outside."""
-        self.mass_range_scale = list(new_range)
 
 
 class GaussianHopperWrapper(gym.Wrapper):

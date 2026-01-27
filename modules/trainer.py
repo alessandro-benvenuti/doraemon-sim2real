@@ -14,11 +14,11 @@ from stable_baselines3.common.monitor import Monitor
 from env.custom_hopper import *
 
 # Import your NEW wrapper and callback
-from modules.env import GaussianHopperWrapper, BetaHopperWrapper
+from modules.env import GaussianHopperWrapper, BetaHopperWrapper, UDRHopperWrapper
 from modules.callbacks import DoraemonCallback
 
 
-def make_wrapped_env(env_id, use_doraemon):
+def make_wrapped_env(env_id, mode='source'):
     """Factory for the environment."""
     def _init():
         # Worker-safe import fix
@@ -29,12 +29,14 @@ def make_wrapped_env(env_id, use_doraemon):
         import env.custom_hopper # Register env in worker
         
         env = gym.make(env_id)
-        if use_doraemon:
+        if mode == 'doraemon':
             env = BetaHopperWrapper(env, initial_alpha=7.0, initial_beta=7.0)
+        else:
+            env = UDRHopperWrapper(env, udr_range=(0.5, 2.0))
         return env
     return _init
 
-def train_agent(config, log_dir="./logs/", resume_step=None):
+def train_agent(config, log_dir="./logs/", model_name="final_model", resume_step=None):
     """
     Main training loop with Resume capability.
     :param resume_step: If integer (e.g. 50000), loads checkpoint from that step.
@@ -45,11 +47,19 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         
     n_envs = config.get('n_envs', 1) if config['vectorize'] else 1
     vec_env_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
+
+    # DETERMINE MODE
+    # If config has "mode", use it. Otherwise check "use_doraemon" for backward compatibility
+    mode = config.get('mode', 'source')
+    if config.get('use_doraemon', False):
+        mode = 'doraemon'
+
+    print(f"Training with mode: {mode}")
     
     # 2. Create Environment
     # Note: We create a fresh env first, then load stats into it if resuming
     env = make_vec_env(
-        make_wrapped_env(config['env_id'], use_doraemon=True),
+        make_wrapped_env(config['env_id'], mode=mode),
         n_envs=n_envs,
         vec_env_cls=vec_env_cls,
         monitor_dir=log_dir 
@@ -118,19 +128,29 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
             train_freq=config.get('train_freq', 1),
         )
 
-    # 4. Setup Callback (With Checkpointing Enabled)
-    doraemon_cb = DoraemonCallback(
-        training_env=env,
-        target_success=0.65,
-        buffer_size=100, 
-        lr_param=0.01, 
-        lr_lambda=0.01,
-        # Checkpoint settings
-        save_freq=50000,   # Save every 50k steps
-        save_path=log_dir,
-        initial_lambda=initial_lambda,
-        initial_history=initial_history
-    )
+
+    # SETUP CALLBACKS CONDITIONALLY
+    callbacks_list = []
+    
+    if mode == 'doraemon':
+        # Only use DORAEMON callback for the adaptive agent
+        doraemon_cb = DoraemonCallback(
+            training_env=env,
+            target_success=0.65,
+            buffer_size=100, 
+            lr_param=0.01, 
+            lr_lambda=0.01,
+            # Checkpoint settings
+            save_freq=50000,   # Save every 50k steps
+            save_path=log_dir,
+            initial_lambda=initial_lambda,
+            initial_history=initial_history
+        )
+        callbacks_list.append(doraemon_cb)
+    else:
+        # For UDR or Source, we don't need a specific callback
+        print(f"Skipping DoraemonCallback for mode: {mode}")
+    
 
     # 5. Run Training
     try:
@@ -138,12 +158,12 @@ def train_agent(config, log_dir="./logs/", resume_step=None):
         reset_timesteps = (resume_step is None)
         total_steps = config['timesteps']
         
-        model.learn(total_timesteps=total_steps, callback=[doraemon_cb], reset_num_timesteps=reset_timesteps)
+        model.learn(total_timesteps=total_steps, callback=callbacks_list, reset_num_timesteps=reset_timesteps)
         
         # Final Save
-        model.save(f"{log_dir}/final_model")
+        model.save(f"{log_dir}/{model_name}")
         if config['normalize']:
-            env.save(f"{log_dir}/final_vecnormalize.pkl")
+            env.save(f"{log_dir}/{model_name}_vecnormalize.pkl")
             
     except KeyboardInterrupt:
         print("Interrupted! Saving emergency checkpoint...")

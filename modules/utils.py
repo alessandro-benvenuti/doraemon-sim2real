@@ -102,7 +102,7 @@ def plot_doraemon_dynamics(doraemon_callback):
             ax_success.plot(smooth, color='cyan', linestyle=':', label='Smoothed')
             
     # Linea del Target
-    target = getattr(doraemon_callback, 'target_success', 0.8) # Fallback se manca attributo
+    target = getattr(doraemon_callback, 'target_success', 0.65) # Fallback se manca attributo
     ax_success.axhline(y=target, color='red', linestyle='--', label=f'Target ({target})')
     ax_success.set_ylabel('Success Rate')
     ax_success.set_title('1. Constraint: Success Rate')
