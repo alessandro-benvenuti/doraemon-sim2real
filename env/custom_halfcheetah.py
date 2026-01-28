@@ -144,6 +144,10 @@ class CustomHalfCheetah(MujocoEnv, utils.EzPickle):
             # MuJoCo stores friction in model.geom_friction [sliding, torsional, rolling]
             # Geom 0 è il pavimento (floor)
             self.model.geom_friction[0, 0] = base_floor_friction + friction_shift
+        elif domain == "combined":
+            # Combina shift di massa e attrito
+            self.model.body_mass[1] = base_torso_mass + mass_shift
+            self.model.geom_friction[0, 0] = base_floor_friction + friction_shift
 
         # Sicurezza: impedisci valori fisicamente impossibili
         self.model.body_mass[1] = max(0.01, self.model.body_mass[1])
@@ -324,4 +328,11 @@ gym.register(
         entry_point="%s:CustomHalfCheetah" % __name__,
         max_episode_steps=500,
         kwargs={"domain": "friction"}
+)
+
+gym.register(
+        id="CustomHalfCheetah-combined-v0",
+        entry_point="%s:CustomHalfCheetah" % __name__,
+        max_episode_steps=500,
+        kwargs={"domain": "combined"}
 )
