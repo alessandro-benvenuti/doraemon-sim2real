@@ -34,7 +34,7 @@ def make_wrapped_env(env_id, mode='source'):
         elif mode == 'doraemon-gaussian':
             env = GaussianHopperWrapper(env, initial_mean=1.0, initial_std=0.01)
         else:
-            env = UDRHopperWrapper(env, udr_range=(0.1, 10.0))
+            env = UDRHopperWrapper(env, udr_range=(0.9, 1.1))
         return env
     return _init
 
