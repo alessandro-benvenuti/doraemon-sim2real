@@ -73,13 +73,13 @@ We implement a **Performance-Gated Warmup**:
 We evaluated the ability to induce robust behaviors against unmodeled dynamics. We trained on leg mass randomization but tested on **Torso Mass**, which was held fixed during training.
 
 ![Hopper Mass Shift](pictures/hopper_Different_mass_shifts.png)
-*Zero-Shot Robustness Analysis on Torso Mass. The agent maintains >90% performance within the [-1.5, +1.0] kg range, validating that the robust manifold generalized to unmodeled upper-body mass variations.*
+*Figure 1: Zero-Shot Robustness Analysis on Torso Mass. The agent maintains >90% performance within the [-1.5, +1.0] kg range, validating that the robust manifold generalized to unmodeled upper-body mass variations.*
 
 #### Comparison vs. Uniform Domain Randomization (UDR)
 We compared DORAEMON against Narrow, Wide, and Tuned UDR baselines. Wide UDR failed catastrophically by sampling infeasible physics.
 
 ![Hopper Heatmaps](pictures/hopper_heatmap_torso_friction.png)
-*Zero-Shot Robustness Heatmaps (Mass vs. Friction). DORAEMON (Top-Left) autonomously recovers the robust performance profile of the manually Tuned UDR (Bottom-Left), significantly outperforming the Narrow baseline in high-friction regions.*
+*Figure 2: Zero-Shot Robustness Heatmaps (Mass vs. Friction). DORAEMON (Top-Left) autonomously recovers the robust performance profile of the manually Tuned UDR (Bottom-Left), significantly outperforming the Narrow baseline in high-friction regions.*
 
 ---
 
@@ -95,6 +95,8 @@ DORAEMON is remarkably robust to torso mass shifts. Even when the torso mass was
 | ![HC Doraemon Mass](pictures/hc_doraemon_shift_mass.png) | ![HC UDR Mass](pictures/hc_udr_shift_mass.png) |
 | *Higher performance ceiling (~4000)* | *Lower absolute reward (~3100)* |
 
+*Figure 3*
+
 
 #### 2. Robustness to Friction Shifts
 A trade-off is observed: DORAEMON prioritizes peak efficiency in the "likely" training range, while UDR learns a conservative, slower gait that degrades slower at extreme outliers.
@@ -103,15 +105,16 @@ A trade-off is observed: DORAEMON prioritizes peak efficiency in the "likely" tr
 | :---: | :---: |
 | ![HC Doraemon Friction](pictures/hc_doraemon_shift_friction.png) | ![HC UDR Friction](pictures/hc_udr_shift_friction.png) |
 
+*Figure 4*
 
 #### 3. Cross-Evaluation Heatmaps
 The heatmaps illustrate the policy landscapes. DORAEMON shows a "saturated" high-performance plateau, whereas UDR is more diffuse.
 
 ![HC Doraemon Heatmap](pictures/hc_doraemn_heatmap.png)
-*DORAEMON Heatmap. Note the intense green plateau (approx 4000 reward) indicating mastery of the learned manifold.*
+*Figure 5: DORAEMON Heatmap. Note the intense green plateau (approx 4000 reward) indicating mastery of the learned manifold.*
 
 ![HC UDR Heatmap](pictures/hc_udr_heatmap.png)
-*UDR Heatmap. The baseline rewards are consistently lower, resulting in a lighter shade of green across the center.*
+*Figure 6: UDR Heatmap. The baseline rewards are consistently lower, resulting in a lighter shade of green across the center.*
 
 ---
 
