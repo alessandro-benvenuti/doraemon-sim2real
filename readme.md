@@ -9,9 +9,30 @@
 
 ---
 
-## 🎥 Demos & Videos
+### 🎥 DORAEMON: Consistent Performance across Dynamics
 
-*(Videos showcasing the agent's performance under randomized dynamics will be added here)*
+| **Source Dynamics (Training)** | **Low Friction & Low Mass (Unseen)** |
+| :---: | :---: |
+| ![Doraemon Source](pictures/hopper_original.gif) | ![Doraemon Low Values](pictures/hopper_low_mass_low_friction.gif) |
+| *Agent stable on nominal parameters* | *Agent adapts to slippery, light-weight conditions* |
+
+---
+
+### ⚔️ Robustness Comparison: Low Mass / High Friction
+
+| **DORAEMON (Success)** | **Narrow UDR (Failure)** |
+| :---: | :---: |
+| ![Doraemon High Friction](pictures/hopper_doraemon_success.gif) | ![Narrow UDR Fail](pictures/hopper_narrow_udr_fail.gif) |
+| *Successfully overcomes high friction* | *Fails to generalize beyond narrow training range* |
+
+---
+
+### 🐆 Half-Cheetah: Zero-Shot Transfer to Heavy/High-Friction Dynamics
+
+| **Source Dynamics (Nominal)** | **Target: High Mass & High Friction** |
+| :---: | :---: |
+| ![HalfCheetah Source](pictures/half_cheetah_slowed.gif) | ![HalfCheetah Heavy Friction](pictures/half_cheetah_high_mass_friction.gif) |
+| *Efficient gait on standard training parameters* | *Maintains high speed despite heavier body and rougher ground* |
 
 ---
 
