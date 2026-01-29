@@ -1,102 +1,99 @@
 # DORAEMON+: Enhancing Adaptive Domain Randomization via Performance-Gated Warmup
 
 **Authors:** Alessandro Benvenuti, Irene Bartolini  
-**Institution:** Politecnico di Torino / University of Bologna  
+**Institution:** Politecnico di Torino
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: PyTorch](https://img.shields.io/badge/Framework-PyTorch-orange.svg)](https://pytorch.org/)
 [![Env: MuJoCo](https://img.shields.io/badge/Env-MuJoCo-blue.svg)](https://mujoco.org/)
 
-## 🎥 Demo & Visualizations
+---
 
-We validate our approach on high-dimensional continuous control tasks.
+## 🎥 Demos & Videos
 
-### 🦘 Hopper: Robustness to Unmodeled Dynamics
-*Comparing nominal performance vs. recovery under extreme physics shifts.*
-
-| **Nominal Dynamics** | **Extreme Edge Case** |
-|:--------------------:|:---------------------:|
-| <video src="img/hopper_original.mov" controls width="300"></video> | <video src="img/hopper_low_mass_low_friction.mov" controls width="300"></video> |
-| *Standard performance on nominal physics.* | *Robust recovery under low mass/friction.* |
-
-### 🐆 Half-Cheetah: Peak Performance vs. Conservatism
-<video src="img/half_cheetah_slowed.mov" controls width="300"></video> 
+*(Videos showcasing the agent's performance under randomized dynamics will be added here)*
 
 ---
 
-## 📖 Abstract
-Bridging the reality gap remains a critical challenge in deploying Deep Reinforcement Learning (DRL) policies onto physical systems. This project introduces **DORAEMON+**, an enhanced sim-to-real transfer framework based on *Domain Randomization via Entropy Maximization*. 
+## 📝 Abstract
 
-[cite_start]We introduce a novel **Performance-Gated Warmup** strategy to stabilize policy initialization [cite: 8-9]. This phase mitigates the "cold start" problem where random policies fail to provide useful gradients for curriculum updates. Experimental results on MuJoCo (Hopper & Half-Cheetah) demonstrate that this architecture significantly reduces transfer variance and achieves higher asymptotic performance compared to Uniform Domain Randomization (UDR).
+Bridging the reality gap remains a critical challenge in deploying Deep Reinforcement Learning (DRL) policies onto physical systems. While domain adaptation methods have shown promise, they often suffer from initial instability and slow convergence during the transfer phase.
+
+This project introduces an enhanced sim-to-real transfer framework based on **DORAEMON** (Domain Randomization via Entropy Maximization), augmented with a novel **Performance-Gated Warmup** strategy. This warmup phase is designed to stabilize policy initialization, effectively mitigating the distribution shift between simulated and real-world dynamics before full adaptation begins.
+
+We validate our approach on high-dimensional continuous control tasks, specifically using the MuJoCo Hopper and Half-Cheetah environments. Results demonstrate that our architecture significantly reduces transfer variance and achieves higher asymptotic performance compared to standard baselines.
 
 ---
 
 ## ⚙️ Methodology
 
-### 1. The Problem: Gradient Failure at Initialization
-Standard active domain randomization methods often fail at the start of training. When a policy is randomly initialized, its success rate is near zero ($\mathcal{G} \approx 0$). Consequently, the gradient for the distribution parameters becomes uninformative:
+### 1. The Core Problem: The Reality Gap
+Standard Domain Randomization (DR) often requires tedious manual tuning.
+* If the distribution is **too narrow**, the policy fails to generalize.
+* If the distribution is **too wide**, the policy becomes over-conservative, and performance collapses.
 
-$$\nabla_{\phi}J \propto \sum (\sigma(\tau) - b) \nabla_{\phi} \log \nu_{\phi}(\xi) \approx 0$$
+### 2. DORAEMON (Background)
+We adopt the DORAEMON framework, which treats the sampling distribution as a dynamic entity. It utilizes a constrained optimization approach to maximize the **entropy** of environmental parameters (diversity) while maintaining a baseline level of agent performance (safety).
 
-[cite_start]This leads to stagnation or random drift in the environment parameters [cite: 63-66].
+### 3. The Contribution: Performance-Gated Warmup
+A critical vulnerability exists in the standard framework: at initialization, a random policy has a success rate $\approx 0$, leading to uninformative gradients where the optimization effectively stalls.
 
-### 2. The Solution: Performance-Gated Warmup
-[cite_start]We implement a "latching" mechanism that freezes the distribution parameters $\phi$ until the agent achieves a minimum competence threshold $\alpha_{warmup}$ [cite: 67-68].
-* **Static Phase:** Train on nominal dynamics until $\mathcal{G} \ge \alpha_{warmup}$.
-* **Adaptive Phase:** Unlock $\phi$ and maximize entropy $\mathcal{H}(\nu_\phi)$ subject to the success constraint.
-
----
-
-## 📊 Experiments & Results
-
-### Experiment 1: Hopper (Emergent Robustness)
-We evaluated the agent's ability to generalize to unseen dynamics (e.g., Torso Mass) even when those parameters were fixed during training.
-
-* **Training Dynamics:** The agent successfully expands the distribution entropy over time.  
-  ![Training Performance](img/hopper_training_performance.png)
-
-* **Zero-Shot Generalization:** The agent maintains near-optimal performance within a [-1.5kg, +1.0kg] torso mass shift.  
-  ![Hopper Mass Shift](img/hopper_Different_mass_shifts.png)
-
-* **Heatmap Analysis (Torso vs Friction):** ![Hopper Heatmap](img/hopper_heatmap_torso_friction.png)
-
-### Experiment 2: Half-Cheetah (7-Dimensional Randomization)
-We compared DORAEMON+ against Uniform Domain Randomization (UDR) across a complex 7D parameter space (masses of all links + friction).
-
-#### Heatmap Analysis: DORAEMON vs. UDR
-These heatmaps visualize the "Feasibility Manifold" (Reward) across varying Friction and Mass shifts.
-
-| **DORAEMON (Ours)** | **Uniform DR (UDR)** |
-|:-------------------:|:--------------------:|
-| ![Doraemon Heatmap](img/hc_doraemon_heatmap.png) | ![UDR Heatmap](img/hc_udr_heatmap.png) |
-| [cite_start]*High-reward plateau ($\approx 4000$) concentrated around feasible physics [cite: 275-276].* | *Lower, diffuse performance ($\approx 3100$) due to overly conservative training.* |
-
-#### Detailed Robustness Profiles
-[cite_start]While UDR maintains marginal stability at extreme outliers, DORAEMON dominates in the "likely" physics range [cite: 275-276].
-
-* **Friction Shift Analysis:**
-    * *DORAEMON:* ![Doraemon Friction](img/hc_doraemon_shift_friction.png)
-    * *UDR:* ![UDR Friction](img/hc_udr_shift_friction.png)
-
-* **Mass Shift Analysis:**
-    * *DORAEMON:* ![Doraemon Mass](img/hc_doraemon_shift_mass.png)
-    * *UDR:* ![UDR Mass](img/hc_udr_shift_mass.png)
+We implement a **Performance-Gated Warmup**:
+1.  **Static Phase:** We strictly freeze distribution parameters. The policy trains on nominal dynamics until it establishes a robust manifold capable of solving the base task.
+2.  **Activation:** Once the success rate $\mathcal{G} \ge \alpha_{warmup}$, the warmup concludes.
+3.  **Adaptive Phase:** The standard DORAEMON update is applied, allowing the distribution to expand based on the dual optimization of entropy and success.
 
 ---
 
-## 🚀 Usage
+## 🧪 Experiments & Results
 
-### Installation
-```bash
-# Clone the repository
-git clone [https://github.com/your-username/doraemon-plus.git](https://github.com/your-username/doraemon-plus.git)
-cd doraemon-plus
+### 🦘 Hopper: Emergent Robustness
 
-# Install dependencies
-pip install -r requirements.txt
-# Requires MuJoCo and Gymnasium
-```
+We evaluated the ability to induce robust behaviors against unmodeled dynamics. We trained on leg mass randomization but tested on **Torso Mass**, which was held fixed during training.
 
+![Hopper Mass Shift](pictures/hopper_Different_mass_shifts.png)
+*Figure 2: Zero-Shot Robustness Analysis on Torso Mass. The agent maintains >90% performance within the [-1.5, +1.0] kg range, validating that the robust manifold generalized to unmodeled upper-body mass variations.*
 
-### From the Robot Learning Course - 01HFNOV
-Official assignment at [Google Doc](https://docs.google.com/document/d/1XWE2NB-keFvF-EDT_5muoY8gdtZYwJIeo48IMsnr9l0/edit?usp=sharing).
+#### Comparison vs. Uniform Domain Randomization (UDR)
+We compared DORAEMON against Narrow, Wide, and Tuned UDR baselines. Wide UDR failed catastrophically by sampling infeasible physics.
+
+![Hopper Heatmaps](pictures/hopper_heatmap_torso_friction.png)
+*Figure 3: Zero-Shot Robustness Heatmaps (Mass vs. Friction). DORAEMON (Top-Left) autonomously recovers the robust performance profile of the manually Tuned UDR (Bottom-Left), significantly outperforming the Narrow baseline in high-friction regions.*
+
+---
+
+### 🐆 Half-Cheetah: High-Dimensional Randomization
+
+We increased complexity by randomizing 7 parameters simultaneously (link masses + floor friction).
+
+#### 1. Robustness to Mass Shifts
+DORAEMON is remarkably robust to torso mass shifts. Even when the torso mass was reduced by 6kg (leaving only ~0.25kg), the agent retained 78.5% of its baseline performance.
+
+| **DORAEMON** | **UDR (Baseline)** |
+| :---: | :---: |
+| ![HC Doraemon Mass](pictures/hc_doraemon_shift_mass.png) | ![HC UDR Mass](pictures/hc_udr_shift_mass.png) |
+| *Higher performance ceiling (~4000)* | *Lower absolute reward (~3100)* |
+
+#### 2. Robustness to Friction Shifts
+A trade-off is observed: DORAEMON prioritizes peak efficiency in the "likely" training range, while UDR learns a conservative, slower gait that degrades slower at extreme outliers.
+
+| **DORAEMON** | **UDR (Baseline)** |
+| :---: | :---: |
+| ![HC Doraemon Friction](pictures/hc_doraemon_shift_friction.png) | ![HC UDR Friction](pictures/hc_udr_shift_friction.png) |
+
+#### 3. Cross-Evaluation Heatmaps
+The heatmaps illustrate the policy landscapes. DORAEMON shows a "saturated" high-performance plateau, whereas UDR is more diffuse.
+
+![HC Doraemon Heatmap](pictures/hc_doraemn_heatmap.png)
+*Figure 4: DORAEMON Heatmap. Note the intense green plateau (approx 4000 reward) indicating mastery of the learned manifold.*
+
+![HC UDR Heatmap](pictures/hc_udr_heatmap.png)
+*Figure 5: UDR Heatmap. The baseline rewards are consistently lower, resulting in a lighter shade of green across the center.*
+
+---
+
+## 📚 References
+
+* **[1]** X. Chen, "Understanding domain randomization for sim-to-real transfer," 2022.
+* **[2]** G. Tiboni et al., "Domain randomization via entropy maximization," ICLR 2024.
+* **[3]** Full technical report: `benvenuti_bartolini_report.pdf` included in this repository.
